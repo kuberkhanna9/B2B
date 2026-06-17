@@ -1,0 +1,768 @@
+{
+  "profiles": [
+    {
+      "id": "b1100000-0000-0000-0000-000000000001",
+      "fullName": "Super Admin",
+      "role": "SUPERADMIN",
+      "active": true,
+      "createdAt": "2026-06-16T10:07:51.171Z"
+    },
+    {
+      "id": "b1100000-0000-0000-0000-000000000002",
+      "fullName": "Accounts Department",
+      "role": "ACCOUNTS",
+      "active": true,
+      "createdAt": "2026-06-16T10:07:51.171Z"
+    },
+    {
+      "id": "b1100000-0000-0000-0000-000000000003",
+      "fullName": "Inventory Department",
+      "role": "INVENTORY",
+      "active": true,
+      "createdAt": "2026-06-16T10:07:51.171Z"
+    },
+    {
+      "id": "b1100000-0000-0000-0000-000000000004",
+      "fullName": "Retail Department",
+      "role": "RETAIL",
+      "active": true,
+      "createdAt": "2026-06-16T10:07:51.171Z"
+    }
+  ],
+  "products": [
+    {
+      "id": "prod-1",
+      "productName": "Poncho Beige",
+      "category": "Ponchos",
+      "description": "Classic beige wool poncho with fringes.",
+      "brand": "LJK Garments",
+      "season": "Autumn/Winter 2026",
+      "active": true,
+      "createdAt": "2026-06-11T10:08:06.698Z"
+    },
+    {
+      "id": "prod-2",
+      "productName": "Cashmere Sweater",
+      "category": "Sweaters",
+      "description": "Premium 100% cashmere crewneck sweater.",
+      "brand": "LJK Gold",
+      "season": "Winter 2026",
+      "active": true,
+      "createdAt": "2026-06-11T10:08:06.698Z"
+    },
+    {
+      "id": "prod-3",
+      "productName": "Silk Scarf",
+      "category": "Scarves",
+      "description": "Smooth, hand-rolled pure silk scarf with prints.",
+      "brand": "LJK Silk",
+      "season": "All Season",
+      "active": true,
+      "createdAt": "2026-06-11T10:08:06.698Z"
+    }
+  ],
+  "productColors": [
+    {
+      "id": "col-1",
+      "productId": "prod-1",
+      "colorName": "Beige"
+    },
+    {
+      "id": "col-2",
+      "productId": "prod-2",
+      "colorName": "Charcoal"
+    },
+    {
+      "id": "col-3",
+      "productId": "prod-3",
+      "colorName": "Emerald Blue"
+    }
+  ],
+  "productSizes": [
+    {
+      "id": "siz-1",
+      "productId": "prod-1",
+      "sizeName": "One Size"
+    },
+    {
+      "id": "siz-2",
+      "productId": "prod-2",
+      "sizeName": "M"
+    },
+    {
+      "id": "siz-3",
+      "productId": "prod-2",
+      "sizeName": "L"
+    },
+    {
+      "id": "siz-4",
+      "productId": "prod-3",
+      "sizeName": "Standard"
+    }
+  ],
+  "productVariants": [
+    {
+      "id": "var-1",
+      "productId": "prod-1",
+      "sku": "LJK-PON-BEI-OS",
+      "colorId": "col-1",
+      "sizeId": "siz-1",
+      "costPrice": "450.00",
+      "wholesalePrice": "900.00",
+      "mrp": "1800.00",
+      "rackLocation": "Rack A-12",
+      "active": true,
+      "createdAt": "2026-06-11T10:08:06.698Z"
+    },
+    {
+      "id": "var-2",
+      "productId": "prod-2",
+      "sku": "LJK-SWE-CHA-M",
+      "colorId": "col-2",
+      "sizeId": "siz-2",
+      "costPrice": "750.00",
+      "wholesalePrice": "1500.00",
+      "mrp": "3000.00",
+      "rackLocation": "Rack B-03",
+      "active": true,
+      "createdAt": "2026-06-11T10:08:06.698Z"
+    },
+    {
+      "id": "var-3",
+      "productId": "prod-2",
+      "sku": "LJK-SWE-CHA-L",
+      "colorId": "col-2",
+      "sizeId": "siz-3",
+      "costPrice": "770.00",
+      "wholesalePrice": "1550.00",
+      "mrp": "3100.00",
+      "rackLocation": "Rack B-04",
+      "active": true,
+      "createdAt": "2026-06-11T10:08:06.698Z"
+    },
+    {
+      "id": "var-4",
+      "productId": "prod-3",
+      "sku": "LJK-SCA-EME-ST",
+      "colorId": "col-3",
+      "sizeId": "siz-4",
+      "costPrice": "300.00",
+      "wholesalePrice": "600.00",
+      "mrp": "1200.00",
+      "rackLocation": "Rack C-09",
+      "active": true,
+      "createdAt": "2026-06-11T10:08:06.698Z"
+    }
+  ],
+  "stockRequests": [],
+  "stockTransactions": [
+    {
+      "id": "txn-1",
+      "requestId": "req-seed",
+      "variantId": "var-1",
+      "transactionType": "STOCK_IN",
+      "quantity": 200,
+      "referenceNumber": "INITIAL_STOCK",
+      "remarks": "Warehouse opening stock",
+      "createdBy": "b1100000-0000-0000-0000-000000000001",
+      "createdAt": "2026-06-11T10:08:06.698Z"
+    },
+    {
+      "id": "txn-2",
+      "requestId": "req-seed",
+      "variantId": "var-2",
+      "transactionType": "STOCK_IN",
+      "quantity": 150,
+      "referenceNumber": "INITIAL_STOCK",
+      "remarks": "Warehouse opening stock",
+      "createdBy": "b1100000-0000-0000-0000-000000000001",
+      "createdAt": "2026-06-11T10:08:06.698Z"
+    },
+    {
+      "id": "txn-3",
+      "requestId": "req-seed",
+      "variantId": "var-3",
+      "transactionType": "STOCK_IN",
+      "quantity": 120,
+      "referenceNumber": "INITIAL_STOCK",
+      "remarks": "Warehouse opening stock",
+      "createdBy": "b1100000-0000-0000-0000-000000000001",
+      "createdAt": "2026-06-11T10:08:06.698Z"
+    },
+    {
+      "id": "txn-4",
+      "requestId": "req-seed",
+      "variantId": "var-4",
+      "transactionType": "STOCK_IN",
+      "quantity": 250,
+      "referenceNumber": "INITIAL_STOCK",
+      "remarks": "Warehouse opening stock",
+      "createdBy": "b1100000-0000-0000-0000-000000000001",
+      "createdAt": "2026-06-11T10:08:06.698Z"
+    },
+    {
+      "id": "txn-disp-1",
+      "requestId": "req-dispatch-disp-1",
+      "variantId": "var-1",
+      "transactionType": "SALE",
+      "quantity": 150,
+      "referenceNumber": "DIS-000001",
+      "remarks": "B2B Shipment DIS-000001 for SO-000001",
+      "createdBy": "b1100000-0000-0000-0000-000000000003",
+      "createdAt": "2026-06-12T10:08:06.698Z"
+    },
+    {
+      "id": "txn-disp-2",
+      "requestId": "req-dispatch-disp-2",
+      "variantId": "var-2",
+      "transactionType": "SALE",
+      "quantity": 30,
+      "referenceNumber": "DIS-000002",
+      "remarks": "B2B Shipment DIS-000002 for SO-000002",
+      "createdBy": "b1100000-0000-0000-0000-000000000003",
+      "createdAt": "2026-06-14T10:08:06.698Z"
+    },
+    {
+      "id": "txn-disp-3",
+      "requestId": "req-dispatch-disp-2",
+      "variantId": "var-4",
+      "transactionType": "SALE",
+      "quantity": 10,
+      "referenceNumber": "DIS-000002",
+      "remarks": "B2B Shipment DIS-000002 for SO-000002",
+      "createdBy": "b1100000-0000-0000-0000-000000000003",
+      "createdAt": "2026-06-14T10:08:06.698Z"
+    }
+  ],
+  "priceHistory": [],
+  "auditLogs": [
+    {
+      "id": "aud-1",
+      "userId": "b1100000-0000-0000-0000-000000000001",
+      "action": "ORDER_APPROVE",
+      "module": "B2B_ORDERS",
+      "description": "Approved sales order SO-000001 with reserved quantities.",
+      "createdAt": "2026-06-12T10:08:06.698Z"
+    },
+    {
+      "id": "aud-2",
+      "userId": "b1100000-0000-0000-0000-000000000003",
+      "action": "DISPATCH_CREATE",
+      "module": "B2B_DISPATCHES",
+      "description": "Dispatched shipment DIS-000001 for sales order SO-000001",
+      "createdAt": "2026-06-12T10:08:06.698Z"
+    },
+    {
+      "id": "aud-3",
+      "userId": "b1100000-0000-0000-0000-000000000002",
+      "action": "INVOICE_CREATE",
+      "module": "B2B_INVOICES",
+      "description": "Uploaded invoice INV-2026-0001 for sales order SO-000001",
+      "createdAt": "2026-06-12T10:08:06.698Z"
+    },
+    {
+      "id": "aud-4",
+      "userId": "b1100000-0000-0000-0000-000000000002",
+      "action": "PAYMENT_VERIFY",
+      "module": "B2B_PAYMENTS",
+      "description": "Verified payment reference UTR: HDFCR5202606130001 (Amount: ₹127500.00)",
+      "createdAt": "2026-06-13T10:08:06.698Z"
+    },
+    {
+      "id": "aud-5",
+      "userId": "b1100000-0000-0000-0000-000000000001",
+      "action": "ORDER_APPROVE",
+      "module": "B2B_ORDERS",
+      "description": "Approved sales order SO-000002 with reserved quantities.",
+      "createdAt": "2026-06-13T10:08:06.698Z"
+    },
+    {
+      "id": "aud-6",
+      "userId": "b1100000-0000-0000-0000-000000000003",
+      "action": "DISPATCH_CREATE",
+      "module": "B2B_DISPATCHES",
+      "description": "Dispatched shipment DIS-000002 for sales order SO-000002",
+      "createdAt": "2026-06-14T10:08:06.698Z"
+    },
+    {
+      "id": "aud-7",
+      "userId": "b1100000-0000-0000-0000-000000000002",
+      "action": "INVOICE_CREATE",
+      "module": "B2B_INVOICES",
+      "description": "Uploaded invoice INV-2026-0002 for sales order SO-000002",
+      "createdAt": "2026-06-14T10:08:06.698Z"
+    },
+    {
+      "id": "aud-8",
+      "userId": "b1100000-0000-0000-0000-000000000002",
+      "action": "PAYMENT_VERIFY",
+      "module": "B2B_PAYMENTS",
+      "description": "Verified payment reference UTR: UPI998877665544 (Amount: ₹30000.00)",
+      "createdAt": "2026-06-15T10:08:06.698Z"
+    },
+    {
+      "id": "aud-9",
+      "userId": "b1100000-0000-0000-0000-000000000001",
+      "action": "ORDER_APPROVE",
+      "module": "B2B_ORDERS",
+      "description": "Approved sales order SO-000004 with reserved quantities.",
+      "createdAt": "2026-06-15T10:08:06.698Z"
+    },
+    {
+      "id": "mock-jiylpd0ez",
+      "userId": "b1100000-0000-0000-0000-000000000001",
+      "action": "PAYMENT_VERIFY",
+      "module": "B2B_PAYMENTS",
+      "description": "Verified payment reference UTR: CSH999888777000 (Amount: ₹5000.00)",
+      "createdAt": "2026-06-16T10:12:33.497Z"
+    }
+  ],
+  "customers": [
+    {
+      "id": "cust-1",
+      "companyName": "ABC Exports",
+      "phone": "+91 98765 43210",
+      "email": "abc_exports@lallji.com",
+      "billingAddress": "12, Industrial Area, Sector 5, Ludhiana, PB",
+      "shippingAddress": "CF-140, Phase 7, Mohali, PB",
+      "active": true,
+      "createdAt": "2026-06-11T10:08:06.698Z"
+    },
+    {
+      "id": "cust-2",
+      "companyName": "XYZ Retail",
+      "phone": "+91 99999 88888",
+      "email": "xyz_retail@lallji.com",
+      "billingAddress": "Main Market, Mall Road, Shimla, HP",
+      "shippingAddress": "Main Market, Mall Road, Shimla, HP",
+      "active": true,
+      "createdAt": "2026-06-11T10:08:06.698Z"
+    }
+  ],
+  "customerUsers": [
+    {
+      "id": "cu-1",
+      "customerId": "cust-1",
+      "username": "abc_exports",
+      "passwordHash": "5a9cde994326197176a6b57d0799981b2fb98822cc640c4a45a33cd4a80696fe",
+      "fullName": "Anil Khanna (ABC)",
+      "email": "abc_exports@lallji.com",
+      "active": true,
+      "createdAt": "2026-06-11T10:08:06.698Z"
+    },
+    {
+      "id": "cu-2",
+      "customerId": "cust-2",
+      "username": "xyz_retail",
+      "passwordHash": "cae8bf2805ef9cc7475f49ee2e707d885a5dfb088e1dc4a6828551ab9388df6c",
+      "fullName": "Yash Sharma (XYZ)",
+      "email": "xyz_retail@lallji.com",
+      "active": true,
+      "createdAt": "2026-06-11T10:08:06.698Z"
+    }
+  ],
+  "customerPricing": [
+    {
+      "id": "cp-1",
+      "customerId": "cust-1",
+      "variantId": "var-1",
+      "customPrice": "850.00",
+      "createdAt": "2026-06-11T10:08:06.698Z"
+    },
+    {
+      "id": "cp-2",
+      "customerId": "cust-2",
+      "variantId": "var-1",
+      "customPrice": "920.00",
+      "createdAt": "2026-06-11T10:08:06.698Z"
+    }
+  ],
+  "salesOrders": [
+    {
+      "id": "so-1",
+      "orderNumber": "SO-000001",
+      "customerId": "cust-1",
+      "createdBy": "cu-1",
+      "status": "DELIVERED",
+      "totalAmount": "127500.00",
+      "remarks": "Please pack in double-ply boxes.",
+      "approvedBy": "b1100000-0000-0000-0000-000000000001",
+      "approvedAt": "2026-06-12T10:08:06.698Z",
+      "createdAt": "2026-06-11T10:08:06.698Z"
+    },
+    {
+      "id": "so-2",
+      "orderNumber": "SO-000002",
+      "customerId": "cust-1",
+      "createdBy": "cu-1",
+      "status": "PARTIALLY_FULFILLED",
+      "totalAmount": "51000.00",
+      "remarks": "Ship via BlueDart.",
+      "approvedBy": "b1100000-0000-0000-0000-000000000001",
+      "approvedAt": "2026-06-13T10:08:06.698Z",
+      "createdAt": "2026-06-13T10:08:06.698Z"
+    },
+    {
+      "id": "so-3",
+      "orderNumber": "SO-000003",
+      "customerId": "cust-2",
+      "createdBy": "cu-2",
+      "status": "PENDING_APPROVAL",
+      "totalAmount": "18500.00",
+      "remarks": "Need invoice hardcopy.",
+      "approvedBy": null,
+      "approvedAt": null,
+      "createdAt": "2026-06-16T10:08:06.698Z"
+    },
+    {
+      "id": "so-4",
+      "orderNumber": "SO-000004",
+      "customerId": "cust-1",
+      "createdBy": "cu-1",
+      "status": "APPROVED",
+      "totalAmount": "60000.00",
+      "remarks": "Urgent shipment required.",
+      "approvedBy": "b1100000-0000-0000-0000-000000000001",
+      "approvedAt": "2026-06-15T10:08:06.698Z",
+      "createdAt": "2026-06-15T10:08:06.698Z"
+    }
+  ],
+  "salesOrderItems": [
+    {
+      "id": "soi-1",
+      "orderId": "so-1",
+      "variantId": "var-1",
+      "orderedQuantity": 150,
+      "approvedQuantity": 150,
+      "dispatchedQuantity": 150,
+      "pricePerUnit": "850.00",
+      "totalPrice": "127500.00",
+      "createdAt": "2026-06-11T10:08:06.698Z"
+    },
+    {
+      "id": "soi-2",
+      "orderId": "so-2",
+      "variantId": "var-2",
+      "orderedQuantity": 30,
+      "approvedQuantity": 30,
+      "dispatchedQuantity": 30,
+      "pricePerUnit": "1500.00",
+      "totalPrice": "45000.00",
+      "createdAt": "2026-06-13T10:08:06.698Z"
+    },
+    {
+      "id": "soi-3",
+      "orderId": "so-2",
+      "variantId": "var-4",
+      "orderedQuantity": 10,
+      "approvedQuantity": 10,
+      "dispatchedQuantity": 10,
+      "pricePerUnit": "600.00",
+      "totalPrice": "6000.00",
+      "createdAt": "2026-06-13T10:08:06.698Z"
+    },
+    {
+      "id": "soi-4",
+      "orderId": "so-3",
+      "variantId": "var-3",
+      "orderedQuantity": 10,
+      "approvedQuantity": 0,
+      "dispatchedQuantity": 0,
+      "pricePerUnit": "1550.00",
+      "totalPrice": "15500.00",
+      "createdAt": "2026-06-16T10:08:06.698Z"
+    },
+    {
+      "id": "soi-5",
+      "orderId": "so-3",
+      "variantId": "var-4",
+      "orderedQuantity": 5,
+      "approvedQuantity": 0,
+      "dispatchedQuantity": 0,
+      "pricePerUnit": "600.00",
+      "totalPrice": "3000.00",
+      "createdAt": "2026-06-16T10:08:06.698Z"
+    },
+    {
+      "id": "soi-6",
+      "orderId": "so-4",
+      "variantId": "var-2",
+      "orderedQuantity": 40,
+      "approvedQuantity": 40,
+      "dispatchedQuantity": 0,
+      "pricePerUnit": "1500.00",
+      "totalPrice": "60000.00",
+      "createdAt": "2026-06-15T10:08:06.698Z"
+    }
+  ],
+  "dispatches": [
+    {
+      "id": "disp-1",
+      "orderId": "so-1",
+      "dispatchNumber": "DIS-000001",
+      "courier": "Blue Dart",
+      "trackingNumber": "BD998877665IN",
+      "dispatchDate": "2026-06-12T10:08:06.698Z",
+      "remarks": "Delivered safely.",
+      "createdBy": "b1100000-0000-0000-0000-000000000003",
+      "createdAt": "2026-06-12T10:08:06.698Z"
+    },
+    {
+      "id": "disp-2",
+      "orderId": "so-2",
+      "dispatchNumber": "DIS-000002",
+      "courier": "Delhivery Courier",
+      "trackingNumber": "DL112233445IN",
+      "dispatchDate": "2026-06-14T10:08:06.698Z",
+      "remarks": "Partial dispatch of ready items.",
+      "createdBy": "b1100000-0000-0000-0000-000000000003",
+      "createdAt": "2026-06-14T10:08:06.698Z"
+    }
+  ],
+  "dispatchItems": [
+    {
+      "id": "di-1",
+      "dispatchId": "disp-1",
+      "variantId": "var-1",
+      "quantity": 150,
+      "createdAt": "2026-06-12T10:08:06.698Z"
+    },
+    {
+      "id": "di-2",
+      "dispatchId": "disp-2",
+      "variantId": "var-2",
+      "quantity": 30,
+      "createdAt": "2026-06-14T10:08:06.698Z"
+    },
+    {
+      "id": "di-3",
+      "dispatchId": "disp-2",
+      "variantId": "var-4",
+      "quantity": 10,
+      "createdAt": "2026-06-14T10:08:06.698Z"
+    }
+  ],
+  "invoices": [
+    {
+      "id": "inv-1",
+      "orderId": "so-1",
+      "invoiceNumber": "INV-2026-0001",
+      "invoiceDate": "2026-06-12T10:08:06.698Z",
+      "amount": "127500.00",
+      "dueDate": "2026-07-11T10:08:06.700Z",
+      "status": "PAID",
+      "invoicePdfUrl": "/uploads/invoice_so_000001.pdf",
+      "createdBy": "b1100000-0000-0000-0000-000000000002",
+      "createdAt": "2026-06-12T10:08:06.698Z"
+    },
+    {
+      "id": "inv-2",
+      "orderId": "so-2",
+      "invoiceNumber": "INV-2026-0002",
+      "invoiceDate": "2026-06-14T10:08:06.698Z",
+      "amount": "51000.00",
+      "dueDate": "2026-07-14T10:08:06.700Z",
+      "status": "PARTIALLY_PAID",
+      "invoicePdfUrl": "/uploads/invoice_so_000002.pdf",
+      "createdBy": "b1100000-0000-0000-0000-000000000002",
+      "createdAt": "2026-06-14T10:08:06.698Z"
+    }
+  ],
+  "paymentReferences": [
+    {
+      "id": "pay-1",
+      "customerId": "cust-1",
+      "invoiceId": "inv-1",
+      "paymentDate": "2026-06-13T10:08:06.698Z",
+      "amount": "127500.00",
+      "paymentMode": "BANK_TRANSFER",
+      "referenceNumber": "TXN-HDFC-999",
+      "utrNumber": "HDFCR5202606130001",
+      "notes": "Cleared full invoice INV-2026-0001",
+      "attachmentUrl": "/uploads/receipt_utr_hdfc.jpg",
+      "status": "VERIFIED",
+      "verifiedBy": "b1100000-0000-0000-0000-000000000002",
+      "verifiedAt": "2026-06-13T10:08:06.698Z",
+      "rejectionReason": null,
+      "createdAt": "2026-06-13T10:08:06.698Z"
+    },
+    {
+      "id": "pay-2",
+      "customerId": "cust-1",
+      "invoiceId": "inv-2",
+      "paymentDate": "2026-06-15T10:08:06.698Z",
+      "amount": "30000.00",
+      "paymentMode": "UPI",
+      "referenceNumber": "TXN-GPay-UPI",
+      "utrNumber": "UPI998877665544",
+      "notes": "Partial payment invoice INV-2026-0002",
+      "attachmentUrl": "/uploads/screenshot_gpay.jpg",
+      "status": "VERIFIED",
+      "verifiedBy": "b1100000-0000-0000-0000-000000000002",
+      "verifiedAt": "2026-06-15T10:08:06.698Z",
+      "rejectionReason": null,
+      "createdAt": "2026-06-15T10:08:06.698Z"
+    },
+    {
+      "id": "pay-3",
+      "customerId": "cust-2",
+      "invoiceId": null,
+      "paymentDate": "2026-06-16T10:08:06.698Z",
+      "amount": "5000.00",
+      "paymentMode": "CASH",
+      "referenceNumber": "CASH-DEP-987",
+      "utrNumber": "CSH999888777000",
+      "notes": "Advance for pending orders",
+      "attachmentUrl": null,
+      "status": "VERIFIED",
+      "verifiedBy": "b1100000-0000-0000-0000-000000000001",
+      "verifiedAt": "2026-06-16T10:12:33.497Z",
+      "rejectionReason": null,
+      "createdAt": "2026-06-16T10:08:06.698Z"
+    }
+  ],
+  "customerLedger": [
+    {
+      "id": "led-1",
+      "customerId": "cust-1",
+      "date": "2026-06-12T10:08:06.698Z",
+      "referenceType": "INVOICE",
+      "referenceId": "inv-1",
+      "debitAmount": "127500.00",
+      "creditAmount": "0.00",
+      "runningBalance": "127500.00",
+      "description": "Billed Invoice INV-2026-0001 for Order SO-000001",
+      "createdAt": "2026-06-12T10:08:06.698Z"
+    },
+    {
+      "id": "led-2",
+      "customerId": "cust-1",
+      "date": "2026-06-13T10:08:06.698Z",
+      "referenceType": "PAYMENT",
+      "referenceId": "pay-1",
+      "debitAmount": "0.00",
+      "creditAmount": "127500.00",
+      "runningBalance": "0.00",
+      "description": "Payment reference UTR HDFCR5202606130001 verified (BANK_TRANSFER)",
+      "createdAt": "2026-06-13T10:08:06.698Z"
+    },
+    {
+      "id": "led-3",
+      "customerId": "cust-1",
+      "date": "2026-06-14T10:08:06.698Z",
+      "referenceType": "INVOICE",
+      "referenceId": "inv-2",
+      "debitAmount": "51000.00",
+      "creditAmount": "0.00",
+      "runningBalance": "51000.00",
+      "description": "Billed Invoice INV-2026-0002 for Order SO-000002",
+      "createdAt": "2026-06-14T10:08:06.698Z"
+    },
+    {
+      "id": "led-4",
+      "customerId": "cust-1",
+      "date": "2026-06-15T10:08:06.698Z",
+      "referenceType": "PAYMENT",
+      "referenceId": "pay-2",
+      "debitAmount": "0.00",
+      "creditAmount": "30000.00",
+      "runningBalance": "21000.00",
+      "description": "Payment reference UTR UPI998877665544 verified (UPI)",
+      "createdAt": "2026-06-15T10:08:06.698Z"
+    },
+    {
+      "id": "mock-vesytx6uh",
+      "customerId": "cust-2",
+      "date": "2026-06-16T10:12:33.497Z",
+      "referenceType": "PAYMENT",
+      "referenceId": "pay-3",
+      "debitAmount": "0.00",
+      "creditAmount": "5000.00",
+      "runningBalance": "-5000",
+      "description": "Payment reference UTR CSH999888777000 verified (CASH)",
+      "createdAt": "2026-06-16T10:12:33.497Z"
+    }
+  ],
+  "notifications": [
+    {
+      "id": "not-1",
+      "customerId": "cust-1",
+      "message": "Your order SO-000001 has been successfully submitted and is awaiting approval.",
+      "read": true,
+      "type": "ORDER_SUBMITTED",
+      "createdAt": "2026-06-11T10:08:06.698Z"
+    },
+    {
+      "id": "not-2",
+      "customerId": "cust-1",
+      "message": "Your sales order SO-000001 has been approved! Stock has been reserved.",
+      "read": true,
+      "type": "ORDER_APPROVED",
+      "createdAt": "2026-06-12T10:08:06.698Z"
+    },
+    {
+      "id": "not-3",
+      "customerId": "cust-1",
+      "message": "Shipment created: DIS-000001 via Blue Dart for order SO-000001. Tracking No: BD998877665IN",
+      "read": true,
+      "type": "DISPATCH_CREATED",
+      "createdAt": "2026-06-12T10:08:06.698Z"
+    },
+    {
+      "id": "not-4",
+      "customerId": "cust-1",
+      "message": "Invoice INV-2026-0001 has been uploaded for order SO-000001. Amount: ₹127,500.",
+      "read": true,
+      "type": "INVOICE_UPLOADED",
+      "createdAt": "2026-06-12T10:08:06.698Z"
+    },
+    {
+      "id": "not-5",
+      "customerId": "cust-1",
+      "message": "Your payment reference for ₹127,500 has been verified and credited.",
+      "read": true,
+      "type": "PAYMENT_VERIFIED",
+      "createdAt": "2026-06-13T10:08:06.698Z"
+    },
+    {
+      "id": "not-6",
+      "customerId": "cust-1",
+      "message": "Your sales order SO-000002 has been approved! Stock has been reserved.",
+      "read": true,
+      "type": "ORDER_APPROVED",
+      "createdAt": "2026-06-13T10:08:06.698Z"
+    },
+    {
+      "id": "not-7",
+      "customerId": "cust-1",
+      "message": "Shipment created: DIS-000002 via Delhivery Courier for order SO-000002. Tracking No: DL112233445IN",
+      "read": false,
+      "type": "DISPATCH_CREATED",
+      "createdAt": "2026-06-14T10:08:06.698Z"
+    },
+    {
+      "id": "not-8",
+      "customerId": "cust-1",
+      "message": "Invoice INV-2026-0002 has been uploaded for order SO-000002. Amount: ₹51,000.",
+      "read": false,
+      "type": "INVOICE_UPLOADED",
+      "createdAt": "2026-06-14T10:08:06.698Z"
+    },
+    {
+      "id": "not-9",
+      "customerId": "cust-1",
+      "message": "Your payment reference for ₹30,000 has been verified and credited.",
+      "read": false,
+      "type": "PAYMENT_VERIFIED",
+      "createdAt": "2026-06-15T10:08:06.698Z"
+    },
+    {
+      "id": "mock-i5znjo6m8",
+      "customerId": "cust-2",
+      "message": "Your payment reference for ₹5000.00 has been verified and credited.",
+      "read": false,
+      "type": "PAYMENT_VERIFIED",
+      "createdAt": "2026-06-16T10:12:33.497Z"
+    }
+  ]
+}
