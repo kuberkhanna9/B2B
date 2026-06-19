@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { ROLE_PERMISSIONS, PERMISSIONS, RoleType } from './rbac';
 
 const DB_FILE = path.join(process.cwd(), 'b2b_mock_db.json');
 
@@ -31,7 +32,13 @@ export interface MockDbState {
   returnRequests: any[];
   returnRequestItems: any[];
   returnAttachments: any[];
+  returnClaimImages: any[];
   returnResolutions: any[];
+  roles: any[];
+  permissions: any[];
+  rolePermissions: any[];
+  userRoles: any[];
+  branchUsers: any[];
 }
 
 // Fixed system admin accounts (session fallback)
@@ -230,6 +237,64 @@ function getInitialState(): MockDbState {
     { id: 'br-4', customerId: 'cust-2', branchName: 'Shimla Mall Road', branchCode: 'SML-01', contactPerson: 'Yash Sharma', phone: '+91 99999 88888', email: 'xyz_retail@lallji.com', gst: '02AAAAA1111A1Z4', billingAddress: 'Main Market, Mall Road, Shimla, HP', shippingAddress: 'Main Market, Mall Road, Shimla, HP', status: 'ACTIVE', createdAt: date5DaysAgo }
   ];
 
+  // Seed Roles
+  const roles = [
+    { id: 'role-superadmin', name: 'SUPERADMIN', description: 'System owner and administrator' },
+    { id: 'role-inventory', name: 'INVENTORY_DEPARTMENT', description: 'Warehouse and stock operations' },
+    { id: 'role-accounts', name: 'ACCOUNTS_DEPARTMENT', description: 'Billing and receivables' },
+    { id: 'role-client-admin', name: 'CLIENT_ADMIN', description: 'Primary user for customer company' },
+    { id: 'role-client-branch', name: 'CLIENT_BRANCH_USER', description: 'Branch-level ordering user' }
+  ];
+
+  // Seed Permissions
+  const permissions = Object.keys(PERMISSIONS).map(code => ({
+    id: `perm-${code.toLowerCase().replace(/_/g, '-')}`,
+    code,
+    description: `Access permission for ${code}`
+  }));
+
+  // Seed Role Permissions
+  const rolePermissions: any[] = [];
+  for (const r of roles) {
+    const permCodes = ROLE_PERMISSIONS[r.name as RoleType] || [];
+    for (const code of permCodes) {
+      const matchedPerm = permissions.find(p => p.code === code);
+      if (matchedPerm) {
+        rolePermissions.push({
+          id: `rp-${r.name.toLowerCase()}-${code.toLowerCase().replace(/_/g, '-')}`,
+          roleId: r.id,
+          permissionId: matchedPerm.id
+        });
+      }
+    }
+  }
+
+  // Seed User Roles
+  const userRoles = [
+    { id: 'ur-1', userId: FIXED_PROFILES[0].id, roleId: 'role-superadmin' },
+    { id: 'ur-2', userId: FIXED_PROFILES[1].id, roleId: 'role-accounts' },
+    { id: 'ur-3', userId: FIXED_PROFILES[2].id, roleId: 'role-inventory' },
+    { id: 'ur-4', userId: FIXED_PROFILES[3].id, roleId: 'role-inventory' },
+    { id: 'ur-5', userId: 'cu-1', roleId: 'role-client-admin' },
+    { id: 'ur-6', userId: 'cu-2', roleId: 'role-client-admin' }
+  ];
+
+  // Seed Branch Users
+  const branchUsers = [
+    {
+      id: 'bu-1',
+      customerId: 'cust-1',
+      branchId: 'br-2',
+      username: 'abc_delhi',
+      passwordHash: '5a9cde994326197176a6b57d0799981b2fb98822cc640c4a45a33cd4a80696fe',
+      fullName: 'Sanjay Gupta (Delhi Branch)',
+      email: 'delhi@abc.com',
+      active: true,
+      createdAt: date5DaysAgo
+    }
+  ];
+  userRoles.push({ id: 'ur-7', userId: 'bu-1', roleId: 'role-client-branch' });
+
   return {
     profiles: [...FIXED_PROFILES],
     products,
@@ -257,7 +322,13 @@ function getInitialState(): MockDbState {
     returnRequests: [],
     returnRequestItems: [],
     returnAttachments: [],
-    returnResolutions: []
+    returnClaimImages: [],
+    returnResolutions: [],
+    roles,
+    permissions,
+    rolePermissions,
+    userRoles,
+    branchUsers
   };
 }
 
@@ -300,23 +371,85 @@ function uuid() {
 
 export const jsonDb = {
   // Audit logs
-  logB2BAuditDetailed: (userId: string | null, action: string, module: string, description: string, oldValue?: string | null, newValue?: string | null) => {
+  logB2BAuditDetailed: (
+    userId: string | null,
+    action: string,
+    module: string,
+    description: string,
+    oldValue?: string | null,
+    newValue?: string | null,
+    role?: string | null,
+    entity?: string | null,
+    ipAddress?: string | null,
+    username?: string | null
+  ) => {
     const state = readDb();
+    
+    let finalRole = role || null;
+    let finalUsername = username || null;
+    
+    if (userId && (!finalRole || !finalUsername)) {
+      const profile = state.profiles.find((p: any) => p.id === userId);
+      if (profile) {
+        if (!finalRole) {
+          if (profile.role === 'ACCOUNTS') finalRole = 'ACCOUNTS_DEPARTMENT';
+          else if (profile.role === 'INVENTORY') finalRole = 'INVENTORY_DEPARTMENT';
+          else finalRole = profile.role;
+        }
+        if (!finalUsername) {
+          if (userId === 'b1100000-0000-0000-0000-000000000001') finalUsername = 'Khanna';
+          else if (userId === 'b1100000-0000-0000-0000-000000000002') finalUsername = 'accounts';
+          else if (userId === 'b1100000-0000-0000-0000-000000000003') finalUsername = 'inventory';
+          else if (userId === 'b1100000-0000-0000-0000-000000000004') finalUsername = 'retail';
+          else finalUsername = profile.fullName;
+        }
+      }
+      
+      if (!finalRole || !finalUsername) {
+        const cu = state.customerUsers.find((u: any) => u.id === userId);
+        if (cu) {
+          if (!finalRole) finalRole = 'CLIENT_ADMIN';
+          if (!finalUsername) finalUsername = cu.username;
+        }
+      }
+      
+      if (!finalRole || !finalUsername) {
+        const bu = state.branchUsers.find((u: any) => u.id === userId);
+        if (bu) {
+          if (!finalRole) finalRole = 'CLIENT_BRANCH_USER';
+          if (!finalUsername) finalUsername = bu.username;
+        }
+      }
+    }
+
     state.auditLogs.push({
       id: uuid(),
       userId: userId && !userId.startsWith('cust-') && userId.length === 36 ? userId : null,
+      username: finalUsername || null,
+      role: finalRole || null,
+      entity: entity || null,
       action,
       module,
       description,
       oldValue: oldValue || null,
       newValue: newValue || null,
+      ipAddress: ipAddress || null,
       createdAt: new Date().toISOString()
     });
     writeDb(state);
     return true;
   },
-  logB2BAudit: (userId: string | null, action: string, module: string, description: string) => {
-    return jsonDb.logB2BAuditDetailed(userId, action, module, description, null, null);
+  logB2BAudit: (
+    userId: string | null,
+    action: string,
+    module: string,
+    description: string,
+    role?: string | null,
+    entity?: string | null,
+    ipAddress?: string | null,
+    username?: string | null
+  ) => {
+    return jsonDb.logB2BAuditDetailed(userId, action, module, description, null, null, role, entity, ipAddress, username);
   },
 
   // Customers
@@ -374,6 +507,51 @@ export const jsonDb = {
     state.customerUsers.push(newUser);
     writeDb(state);
     return newUser;
+  },
+
+  // Branch Users
+  getBranchUsers: (customerId?: string) => {
+    const users = readDb().branchUsers || [];
+    return customerId ? users.filter(u => u.customerId === customerId) : users;
+  },
+  createBranchUser: (customerId: string, branchId: string, username: string, passwordHash: string, fullName: string, email: string) => {
+    const state = readDb();
+    if (!state.branchUsers) state.branchUsers = [];
+    const newUser = {
+      id: uuid(),
+      customerId,
+      branchId,
+      username,
+      passwordHash,
+      fullName,
+      email,
+      active: true,
+      createdAt: new Date().toISOString()
+    };
+    state.branchUsers.push(newUser);
+    // Assign role to branch user
+    if (!state.userRoles) state.userRoles = [];
+    state.userRoles.push({
+      id: uuid(),
+      userId: newUser.id,
+      roleId: 'role-client-branch',
+      createdAt: new Date().toISOString()
+    });
+    writeDb(state);
+    return newUser;
+  },
+  updateBranchUser: (userId: string, data: any) => {
+    const state = readDb();
+    const idx = state.branchUsers.findIndex(u => u.id === userId);
+    if (idx !== -1) {
+      state.branchUsers[idx] = {
+        ...state.branchUsers[idx],
+        ...data
+      };
+      writeDb(state);
+      return true;
+    }
+    return false;
   },
 
   // Customer Pricing
@@ -528,10 +706,21 @@ export const jsonDb = {
   },
 
   // Orders
-  getSalesOrders: (customerId?: string) => {
+  getSalesOrders: async (customerId?: string) => {
     const state = readDb();
     let orders = state.salesOrders;
-    if (customerId) {
+
+    const { getSession } = await import('./session');
+    const session = await getSession();
+    if (session) {
+      if (session.role === 'CLIENT_BRANCH_USER') {
+        orders = orders.filter(o => o.customerId === session.customerId && o.branchId === session.branchId);
+      } else if (session.role === 'CLIENT_ADMIN') {
+        orders = orders.filter(o => o.customerId === session.customerId);
+      } else if (customerId) {
+        orders = orders.filter(o => o.customerId === customerId);
+      }
+    } else if (customerId) {
       orders = orders.filter(o => o.customerId === customerId);
     }
     
@@ -545,10 +734,24 @@ export const jsonDb = {
       };
     }).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   },
-  getOrderDetails: (orderId: string) => {
+  getOrderDetails: async (orderId: string) => {
     const state = readDb();
     const order = state.salesOrders.find(o => o.id === orderId);
     if (!order) return null;
+
+    const { getSession } = await import('./session');
+    const session = await getSession();
+    if (session) {
+      if (session.role === 'CLIENT_BRANCH_USER') {
+        if (order.customerId !== session.customerId || order.branchId !== session.branchId) {
+          return null;
+        }
+      } else if (session.role === 'CLIENT_ADMIN') {
+        if (order.customerId !== session.customerId) {
+          return null;
+        }
+      }
+    }
 
     const cust = state.customers.find(c => c.id === order.customerId);
     const branch = state.customerBranches.find(b => b.id === order.branchId);
@@ -759,13 +962,33 @@ export const jsonDb = {
   },
 
   // Dispatches
-  getDispatches: (customerId?: string) => {
+  getDispatches: async (customerId?: string) => {
     const state = readDb();
     let dispatches = state.dispatches;
-    if (customerId) {
+
+    const { getSession } = await import('./session');
+    const session = await getSession();
+    if (session) {
+      if (session.role === 'CLIENT_BRANCH_USER') {
+        dispatches = dispatches.filter(d => {
+          const o = state.salesOrders.find(order => order.id === d.orderId);
+          return o && o.customerId === session.customerId && o.branchId === session.branchId;
+        });
+      } else if (session.role === 'CLIENT_ADMIN') {
+        dispatches = dispatches.filter(d => {
+          const o = state.salesOrders.find(order => order.id === d.orderId);
+          return o && o.customerId === session.customerId;
+        });
+      } else if (customerId) {
+        dispatches = dispatches.filter(d => {
+          const o = state.salesOrders.find(order => order.id === d.orderId);
+          return o && o.customerId === customerId;
+        });
+      }
+    } else if (customerId) {
       dispatches = dispatches.filter(d => {
-        const order = state.salesOrders.find(o => o.id === d.orderId);
-        return order && order.customerId === customerId;
+        const o = state.salesOrders.find(order => order.id === d.orderId);
+        return o && o.customerId === customerId;
       });
     }
 
@@ -864,13 +1087,33 @@ export const jsonDb = {
   },
 
   // Invoices
-  getInvoices: (customerId?: string) => {
+  getInvoices: async (customerId?: string) => {
     const state = readDb();
     let invoices = state.invoices;
-    if (customerId) {
+
+    const { getSession } = await import('./session');
+    const session = await getSession();
+    if (session) {
+      if (session.role === 'CLIENT_BRANCH_USER') {
+        invoices = invoices.filter(inv => {
+          const o = state.salesOrders.find(order => order.id === inv.orderId);
+          return o && o.customerId === session.customerId && o.branchId === session.branchId;
+        });
+      } else if (session.role === 'CLIENT_ADMIN') {
+        invoices = invoices.filter(inv => {
+          const o = state.salesOrders.find(order => order.id === inv.orderId);
+          return o && o.customerId === session.customerId;
+        });
+      } else if (customerId) {
+        invoices = invoices.filter(inv => {
+          const o = state.salesOrders.find(order => order.id === inv.orderId);
+          return o && o.customerId === customerId;
+        });
+      }
+    } else if (customerId) {
       invoices = invoices.filter(inv => {
-        const order = state.salesOrders.find(o => o.id === inv.orderId);
-        return order && order.customerId === customerId;
+        const o = state.salesOrders.find(order => order.id === inv.orderId);
+        return o && o.customerId === customerId;
       });
     }
 
@@ -945,10 +1188,29 @@ export const jsonDb = {
   },
 
   // Payments
-  getPaymentReferences: (customerId?: string) => {
+  getPaymentReferences: async (customerId?: string) => {
     const state = readDb();
     let payments = state.paymentReferences;
-    if (customerId) {
+
+    const { getSession } = await import('./session');
+    const session = await getSession();
+    if (session) {
+      if (session.role === 'CLIENT_BRANCH_USER') {
+        payments = payments.filter(p => {
+          if (p.customerId !== session.customerId) return false;
+          if (p.invoiceId) {
+            const inv = state.invoices.find(i => i.id === p.invoiceId);
+            const o = inv ? state.salesOrders.find(order => order.id === inv.orderId) : null;
+            return o && o.branchId === session.branchId;
+          }
+          return true;
+        });
+      } else if (session.role === 'CLIENT_ADMIN') {
+        payments = payments.filter(p => p.customerId === session.customerId);
+      } else if (customerId) {
+        payments = payments.filter(p => p.customerId === customerId);
+      }
+    } else if (customerId) {
       payments = payments.filter(p => p.customerId === customerId);
     }
 
@@ -1101,8 +1363,19 @@ export const jsonDb = {
   },
 
   // Ledger
-  getCustomerLedger: (customerId: string) => {
+  getCustomerLedger: async (customerId: string) => {
     const state = readDb();
+
+    const { getSession } = await import('./session');
+    const session = await getSession();
+    if (session) {
+      if (session.role === 'CLIENT_BRANCH_USER') {
+        return [];
+      } else if (session.role === 'CLIENT_ADMIN') {
+        customerId = session.customerId || customerId;
+      }
+    }
+
     return state.customerLedger
       .filter(l => l.customerId === customerId)
       .sort((a, b) => a.date.localeCompare(b.date))
@@ -1414,12 +1687,24 @@ export const jsonDb = {
   },
 
   // Returns / Reverse Logistics
-  getReturnRequests: (customerId?: string) => {
+  getReturnRequests: async (customerId?: string) => {
     const state = readDb();
     let returns = state.returnRequests;
-    if (customerId) {
+
+    const { getSession } = await import('./session');
+    const session = await getSession();
+    if (session) {
+      if (session.role === 'CLIENT_BRANCH_USER') {
+        returns = returns.filter(r => r.customerId === session.customerId && r.branchId === session.branchId);
+      } else if (session.role === 'CLIENT_ADMIN') {
+        returns = returns.filter(r => r.customerId === session.customerId);
+      } else if (customerId) {
+        returns = returns.filter(r => r.customerId === customerId);
+      }
+    } else if (customerId) {
       returns = returns.filter(r => r.customerId === customerId);
     }
+
     return returns.map(r => {
       const cust = state.customers.find(c => c.id === r.customerId);
       const branch = state.customerBranches.find(b => b.id === r.branchId);
@@ -1433,7 +1718,10 @@ export const jsonDb = {
           productName: prod ? prod.productName : ri.customItemName
         };
       });
-      const attachments = state.returnAttachments.filter(ra => ra.returnRequestId === r.id).map(ra => ra.fileUrl);
+      const legacyAttachments = state.returnAttachments.filter(ra => ra.returnRequestId === r.id).map(ra => ra.fileUrl);
+      const newImages = (state.returnClaimImages || []).filter(img => img.returnId === r.id);
+      const allPhotos = [...legacyAttachments, ...newImages.map(img => img.imageUrl)];
+      const uniquePhotos = Array.from(new Set(allPhotos));
       const resolutions = state.returnResolutions.filter(rr => rr.returnRequestId === r.id);
 
       return {
@@ -1442,12 +1730,20 @@ export const jsonDb = {
         branchName: branch ? branch.branchName : 'Main Office',
         orderNumber: order ? order.orderNumber : null,
         items,
-        attachments,
+        attachments: uniquePhotos,
+        photos: uniquePhotos,
+        images: newImages.map(img => ({
+          id: img.id,
+          imageUrl: img.imageUrl,
+          uploadedBy: img.uploadedBy,
+          uploadedAt: img.uploadedAt
+        })),
         resolution: resolutions.length > 0 ? resolutions[0] : null
       };
     }).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   },
   createReturnRequest: (data: {
+    id?: string;
     customerId: string;
     branchId?: string;
     orderId?: string;
@@ -1460,7 +1756,7 @@ export const jsonDb = {
     createdByType: 'CUSTOMER' | 'ADMIN';
   }) => {
     const state = readDb();
-    const returnId = uuid();
+    const returnId = data.id || uuid();
     const now = new Date().toISOString();
     const nextNum = state.returnRequests.length + 1;
     const returnNumber = 'RET-' + String(nextNum).padStart(6, '0');
@@ -1492,6 +1788,10 @@ export const jsonDb = {
       });
     }
 
+    if (!state.returnClaimImages) {
+      state.returnClaimImages = [];
+    }
+
     if (data.photos) {
       for (const photo of data.photos) {
         state.returnAttachments.push({
@@ -1499,6 +1799,14 @@ export const jsonDb = {
           returnRequestId: returnId,
           fileUrl: photo,
           createdAt: now
+        });
+
+        state.returnClaimImages.push({
+          id: uuid(),
+          returnId: returnId,
+          imageUrl: photo,
+          uploadedBy: data.createdBy,
+          uploadedAt: now
         });
       }
     }
@@ -1656,5 +1964,10 @@ export const jsonDb = {
       customerReporting,
       branchReporting
     };
-  }
+  },
+
+  // RBAC getters
+  getRoles: () => readDb().roles || [],
+  getPermissions: () => readDb().permissions || [],
+  getRolePermissions: () => readDb().rolePermissions || []
 };

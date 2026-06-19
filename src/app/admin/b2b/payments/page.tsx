@@ -8,7 +8,7 @@ export const revalidate = 0;
 
 export default async function AdminPaymentsPage() {
   const user = await getSession();
-  if (!user || (user.role !== 'SUPERADMIN' && user.role !== 'ACCOUNTS')) {
+  if (!user || (user.role !== 'SUPERADMIN' && user.role !== 'ACCOUNTS_DEPARTMENT')) {
     redirect('/login');
   }
 

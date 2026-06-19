@@ -14,7 +14,8 @@ import {
   Camera,
   ArrowLeftRight,
   ShieldAlert,
-  FileText
+  FileText,
+  X
 } from 'lucide-react';
 
 interface ReturnsClientProps {
@@ -28,6 +29,13 @@ interface ReturnsClientProps {
 export default function ReturnsClient({ returns, orders, branches, variants, customerId }: ReturnsClientProps) {
   const [activeTab, setActiveTab] = useState<'history' | 'new'>('history');
 
+  // Client-side generated session ID for files upload structure
+  const [returnId, setReturnId] = useState(() => 
+    typeof crypto !== 'undefined' && crypto.randomUUID 
+      ? crypto.randomUUID() 
+      : 'ret-' + Math.random().toString(36).substring(2, 11) + '-' + Date.now()
+  );
+
   // Form Fields
   const [orderId, setOrderId] = useState('');
   const [invoiceNumber, setInvoiceNumber] = useState('');
@@ -40,8 +48,11 @@ export default function ReturnsClient({ returns, orders, branches, variants, cus
     { variantId: '', customItemName: '', isCustom: false, quantity: 1 }
   ]);
 
-  // Image upload URLs
-  const [photos, setPhotos] = useState<string[]>(['']);
+  // Image upload state (Option A files + Option B URLs)
+  const [photoItems, setPhotoItems] = useState<{ url: string; isUrlInput?: boolean; file?: File; isUploading?: boolean; error?: string }[]>([]);
+
+  // Lightbox Preview
+  const [activePreviewUrl, setActivePreviewUrl] = useState<string | null>(null);
 
   // Status/Transitions
   const [isPending, startTransition] = useTransition();
@@ -64,16 +75,125 @@ export default function ReturnsClient({ returns, orders, branches, variants, cus
     }));
   };
 
-  const handleAddPhotoField = () => {
-    setPhotos(prev => [...prev, '']);
+  // Upload/Photos handlers
+  const handleAddUrlField = () => {
+    if (photoItems.length >= 10) {
+      setStatusMsg({ success: false, message: 'Maximum 10 photos are allowed per return claim.' });
+      return;
+    }
+    setPhotoItems(prev => [...prev, { url: '', isUrlInput: true }]);
   };
 
-  const handleRemovePhotoField = (idx: number) => {
-    setPhotos(prev => prev.filter((_, i) => i !== idx));
+  const handleUrlChange = (idx: number, val: string) => {
+    setPhotoItems(prev => prev.map((p, i) => i === idx ? { ...p, url: val } : p));
   };
 
-  const handlePhotoChange = (idx: number, val: string) => {
-    setPhotos(prev => prev.map((p, i) => i === idx ? val : p));
+  const handleRemovePhoto = (idx: number) => {
+    setPhotoItems(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const uploadSingleFile = async (file: File, index: number) => {
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('customerId', customerId);
+      formData.append('returnId', returnId);
+
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData
+      });
+      const result = await res.json();
+
+      if (result.success) {
+        setPhotoItems(prev => {
+          const updated = [...prev];
+          if (updated[index]) {
+            updated[index] = { url: result.url, isUploading: false };
+          }
+          return updated;
+        });
+      } else {
+        setPhotoItems(prev => {
+          const updated = [...prev];
+          if (updated[index]) {
+            updated[index] = { ...updated[index], isUploading: false, error: result.error || 'Upload failed' };
+          }
+          return updated;
+        });
+      }
+    } catch (err: any) {
+      setPhotoItems(prev => {
+        const updated = [...prev];
+        if (updated[index]) {
+          updated[index] = { ...updated[index], isUploading: false, error: err.message || 'Upload failed' };
+        }
+        return updated;
+      });
+    }
+  };
+
+  const handleFileUpload = async (files: FileList) => {
+    const currentCount = photoItems.length;
+    const remainingSlots = 10 - currentCount;
+    const filesToUpload = Array.from(files).slice(0, remainingSlots);
+
+    if (files.length > remainingSlots) {
+      setStatusMsg({ success: false, message: 'Maximum 10 photos are allowed per return claim.' });
+    }
+
+    const tempItems = [...photoItems];
+    const startIndex = tempItems.length;
+
+    for (let i = 0; i < filesToUpload.length; i++) {
+      const file = filesToUpload[i];
+
+      // Validate type
+      const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+      if (!validTypes.includes(file.type)) {
+        setStatusMsg({ success: false, message: `Invalid file type: ${file.name}. Only JPG, PNG, WEBP are accepted.` });
+        continue;
+      }
+
+      // Validate size (10 MB)
+      if (file.size > 10 * 1024 * 1024) {
+        setStatusMsg({ success: false, message: `File too large: ${file.name}. Max size is 10MB.` });
+        continue;
+      }
+
+      const tempUrl = URL.createObjectURL(file);
+      tempItems.push({
+        url: tempUrl,
+        file,
+        isUploading: true
+      });
+    }
+
+    setPhotoItems([...tempItems]);
+
+    // Perform uploads
+    for (let i = 0; i < filesToUpload.length; i++) {
+      const file = filesToUpload[i];
+      const targetIndex = startIndex + i;
+      uploadSingleFile(file, targetIndex);
+    }
+  };
+
+  const handleReplaceFile = async (idx: number, file: File) => {
+    const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+    if (!validTypes.includes(file.type)) {
+      setStatusMsg({ success: false, message: 'Only JPG, PNG, WEBP are accepted.' });
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setStatusMsg({ success: false, message: 'Max size is 10MB.' });
+      return;
+    }
+
+    const tempUrl = URL.createObjectURL(file);
+    setPhotoItems(prev => prev.map((item, i) => i === idx ? { url: tempUrl, file, isUploading: true } : item));
+
+    uploadSingleFile(file, idx);
   };
 
   const handleSubmitClaim = (e: React.FormEvent) => {
@@ -91,17 +211,24 @@ export default function ReturnsClient({ returns, orders, branches, variants, cus
       return;
     }
 
+    const isUploading = photoItems.some(p => p.isUploading);
+    if (isUploading) {
+      setStatusMsg({ success: false, message: 'Please wait until all photo uploads have finished.' });
+      return;
+    }
+
     const payloadItems = validItems.map(item => ({
       variantId: item.isCustom ? undefined : item.variantId,
       customItemName: item.isCustom ? item.customItemName : undefined,
       quantity: item.quantity
     }));
 
-    const payloadPhotos = photos.filter(p => p.trim() !== '');
+    const payloadPhotos = photoItems.map(p => p.url).filter(p => p.trim() !== '');
 
     setStatusMsg(null);
     startTransition(async () => {
       const res = await createReturnRequestAction({
+        id: returnId,
         customerId,
         branchId,
         orderId: orderId || undefined,
@@ -121,7 +248,8 @@ export default function ReturnsClient({ returns, orders, branches, variants, cus
         setReason('DEFECTIVE');
         setRemarks('');
         setItems([{ variantId: '', customItemName: '', isCustom: false, quantity: 1 }]);
-        setPhotos(['']);
+        setPhotoItems([]);
+        setReturnId(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'ret-' + Math.random().toString(36).substring(2, 11) + '-' + Date.now());
         setActiveTab('history');
       } else {
         setStatusMsg({ success: false, message: res.error || 'Failed to submit claim.' });
@@ -395,40 +523,150 @@ export default function ReturnsClient({ returns, orders, branches, variants, cus
           </div>
 
           {/* Photo references */}
-          <div className="space-y-3">
-            <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block flex items-center gap-1"><Camera size={12} />Claim Proof Photos (URLs)</span>
+          <div className="space-y-4">
+            <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block flex items-center gap-1">
+              <Camera size={12} />Claim Proof Photos (1–10 photos)
+            </span>
             
-            <div className="space-y-2">
-              {photos.map((p, idx) => (
-                <div key={idx} className="flex gap-2 items-center">
-                  <input
-                    type="url"
-                    placeholder="https://example.com/returned-garment-damage.jpg"
-                    value={p}
-                    onChange={e => handlePhotoChange(idx, e.target.value)}
-                    className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 focus:outline-none focus:border-slate-800 focus:bg-white font-semibold"
-                  />
-                  {photos.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => handleRemovePhotoField(idx)}
-                      className="bg-white hover:bg-red-50 text-red-605 border border-slate-200 p-2 rounded-lg cursor-pointer"
-                    >
-                      <Trash2 size={12} />
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
+            {photoItems.length > 0 && (
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+                {photoItems.map((item, idx) => (
+                  <div key={idx} className="relative group border border-slate-200 rounded-2xl overflow-hidden bg-slate-50 flex flex-col items-center justify-center h-28 p-2">
+                    {item.isUrlInput ? (
+                      <div className="w-full h-full flex flex-col justify-between">
+                        <input
+                          type="url"
+                          placeholder="Image URL"
+                          required
+                          value={item.url}
+                          onChange={e => handleUrlChange(idx, e.target.value)}
+                          className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1 text-[10px] focus:outline-none focus:border-slate-800 font-semibold"
+                        />
+                        {item.url && (
+                          <div className="w-full flex-1 mt-1 rounded-lg overflow-hidden border border-slate-100 flex items-center justify-center bg-white relative">
+                            <img src={item.url} alt="preview" className="max-h-full max-w-full object-contain" />
+                            <button
+                              type="button"
+                              onClick={() => setActivePreviewUrl(item.url)}
+                              className="absolute inset-0 bg-black/10 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center text-white font-bold text-[8px] uppercase"
+                            >
+                              View
+                            </button>
+                          </div>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleRemovePhoto(idx)}
+                          className="mt-1 text-center text-[9px] text-rose-500 font-bold hover:underline cursor-pointer"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        {item.isUploading ? (
+                          <div className="flex flex-col items-center justify-center gap-1.5 text-slate-400">
+                            <div className="animate-spin rounded-full h-4 w-4 border-2 border-slate-350 border-t-slate-800" />
+                            <span className="text-[8px] font-bold">Uploading...</span>
+                          </div>
+                        ) : (
+                          <div className="relative w-full h-full">
+                            <img src={item.url} alt="Upload preview" className="w-full h-full object-cover rounded-xl" />
+                            
+                            <div className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl flex flex-col items-center justify-center gap-1.5 p-1">
+                              <div className="flex gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => setActivePreviewUrl(item.url)}
+                                  className="bg-white/95 hover:bg-white text-slate-805 text-[8px] px-1.5 py-0.5 rounded font-black cursor-pointer"
+                                >
+                                  View
+                                </button>
+                                <label className="bg-white/95 hover:bg-white text-slate-805 text-[8px] px-1.5 py-0.5 rounded font-black cursor-pointer">
+                                  Replace
+                                  <input
+                                    type="file"
+                                    accept="image/png, image/jpeg, image/jpg, image/webp"
+                                    className="hidden"
+                                    onChange={e => {
+                                      if (e.target.files && e.target.files[0]) {
+                                        handleReplaceFile(idx, e.target.files[0]);
+                                      }
+                                    }}
+                                  />
+                                </label>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleRemovePhoto(idx)}
+                                className="bg-rose-600 hover:bg-rose-500 text-white text-[8px] px-1.5 py-0.5 rounded font-black cursor-pointer"
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                        {item.error && (
+                          <div className="absolute inset-0 bg-rose-50/95 flex flex-col items-center justify-center p-2 text-center text-[8px] font-bold text-rose-600">
+                            <span>Upload failed</span>
+                            <div className="flex gap-2 mt-1">
+                              <button
+                                type="button"
+                                onClick={() => handleRemovePhoto(idx)}
+                                className="underline uppercase"
+                              >
+                                Remove
+                              </button>
+                              {item.file && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (item.file) {
+                                      setPhotoItems(prev => prev.map((p, i) => i === idx ? { ...p, isUploading: true, error: undefined } : p));
+                                      uploadSingleFile(item.file, idx);
+                                    }
+                                  }}
+                                  className="underline uppercase text-slate-850"
+                                >
+                                  Retry
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
 
-            <button
-              type="button"
-              onClick={handleAddPhotoField}
-              className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 font-bold p-2 px-4 rounded-xl flex items-center gap-1.5 shadow-sm transition-colors text-[10px] cursor-pointer"
-            >
-              <Plus size={12} />
-              <span>Add Photo Link</span>
-            </button>
+            <div className="flex gap-3">
+              <label className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 font-bold p-2 px-4 rounded-xl flex items-center gap-1.5 shadow-sm transition-colors text-[10px] cursor-pointer">
+                <Plus size={12} />
+                <span>Upload Photos</span>
+                <input
+                  type="file"
+                  multiple
+                  accept="image/png, image/jpeg, image/jpg, image/webp"
+                  className="hidden"
+                  onChange={e => {
+                    if (e.target.files) {
+                      handleFileUpload(e.target.files);
+                    }
+                  }}
+                />
+              </label>
+
+              <button
+                type="button"
+                onClick={handleAddUrlField}
+                className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-205 font-bold p-2 px-4 rounded-xl flex items-center gap-1.5 shadow-sm transition-colors text-[10px] cursor-pointer"
+              >
+                <Plus size={12} />
+                <span>Add URL</span>
+              </button>
+            </div>
           </div>
 
           {/* Remarks text area */}
@@ -455,6 +693,25 @@ export default function ReturnsClient({ returns, orders, branches, variants, cus
             </button>
           </div>
         </form>
+      )}
+
+      {/* Lightbox Preview Modal */}
+      {activePreviewUrl && (
+        <div className="fixed inset-0 z-[100] bg-slate-950/90 flex flex-col items-center justify-center p-4">
+          <button
+            onClick={() => setActivePreviewUrl(null)}
+            className="absolute top-4 right-4 bg-slate-800/80 hover:bg-slate-700 text-white rounded-xl p-2 cursor-pointer transition-colors border border-slate-700"
+          >
+            <X size={18} />
+          </button>
+          <div className="flex-1 w-full flex items-center justify-center overflow-auto">
+            <img 
+              src={activePreviewUrl} 
+              alt="Preview Full Size" 
+              className="max-h-[85vh] max-w-full object-contain rounded-lg"
+            />
+          </div>
+        </div>
       )}
     </div>
   );

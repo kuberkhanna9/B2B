@@ -29,8 +29,12 @@ import {
   getReturnRequests,
   createReturnRequest,
   resolveReturnRequest,
-  getB2BCatalog
+  getB2BCatalog,
+  getBranchUsers,
+  createBranchUser,
+  updateBranchUser
 } from '@/utils/db';
+import { checkPermission } from '@/utils/rbac';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
@@ -71,8 +75,8 @@ const CustomerSchema = z.object({
 
 export async function createCustomerAction(prevState: any, formData: FormData): Promise<{ success: boolean; error?: string; message?: string }> {
   const user = await getSession();
-  if (!user || user.role !== 'SUPERADMIN') {
-    return { success: false, error: 'Access denied! SuperAdmin authority is required.' };
+  if (!user || !checkPermission(user, 'MANAGE_CUSTOMER')) {
+    return { success: false, error: 'Access denied! Missing required permissions.' };
   }
 
   const emailRaw = formData.get('email') as string || '';
@@ -127,8 +131,8 @@ export async function createCustomerAction(prevState: any, formData: FormData): 
 
 export async function updateCustomerStatusAction(customerId: string, active: boolean): Promise<{ success: boolean; error?: string }> {
   const user = await getSession();
-  if (!user || user.role !== 'SUPERADMIN') {
-    return { success: false, error: 'Access denied!' };
+  if (!user || !checkPermission(user, 'MANAGE_CUSTOMER')) {
+    return { success: false, error: 'Access denied! Missing required permissions.' };
   }
 
   try {
@@ -142,8 +146,8 @@ export async function updateCustomerStatusAction(customerId: string, active: boo
 
 export async function createCustomerUserAction(prevState: any, formData: FormData): Promise<{ success: boolean; error?: string; message?: string }> {
   const user = await getSession();
-  if (!user || user.role !== 'SUPERADMIN') {
-    return { success: false, error: 'Access denied!' };
+  if (!user || !checkPermission(user, 'MANAGE_CUSTOMER_LOGIN')) {
+    return { success: false, error: 'Access denied! Missing required permissions.' };
   }
 
   const customerId = formData.get('customerId') as string;
@@ -171,8 +175,8 @@ export async function createCustomerUserAction(prevState: any, formData: FormDat
 
 export async function setCustomerPricingAction(customerId: string, variantId: string, customPrice: number): Promise<{ success: boolean; error?: string }> {
   const user = await getSession();
-  if (!user || user.role !== 'SUPERADMIN') {
-    return { success: false, error: 'Access denied!' };
+  if (!user || !checkPermission(user, 'MANAGE_CUSTOMER_PRICING')) {
+    return { success: false, error: 'Access denied! Missing required permissions.' };
   }
 
   if (customPrice < 0) return { success: false, error: 'Price must be non-negative.' };
@@ -188,8 +192,8 @@ export async function setCustomerPricingAction(customerId: string, variantId: st
 
 export async function deleteCustomerPricingAction(pricingId: string): Promise<{ success: boolean; error?: string }> {
   const user = await getSession();
-  if (!user || user.role !== 'SUPERADMIN') {
-    return { success: false, error: 'Access denied!' };
+  if (!user || !checkPermission(user, 'MANAGE_CUSTOMER_PRICING')) {
+    return { success: false, error: 'Access denied! Missing required permissions.' };
   }
 
   try {
@@ -206,12 +210,17 @@ export async function deleteCustomerPricingAction(pricingId: string): Promise<{ 
 // =============================================================================
 export async function createOrderAction(branchId: string, items: { variantId: string; quantity: number }[], remarks?: string): Promise<{ success: boolean; error?: string; message?: string }> {
   const user = await getSession();
-  if (!user || user.role !== 'B2B_CUSTOMER' || !user.customerId) {
-    return { success: false, error: 'Session expired or invalid. Please login as B2B Customer.' };
+  if (!user || !checkPermission(user, 'CREATE_ORDER') || !user.customerId) {
+    return { success: false, error: 'Session expired or invalid permissions. Please login as B2B Customer.' };
   }
 
   if (!branchId) {
     return { success: false, error: 'Branch selection is required.' };
+  }
+
+  // Branch level security validation
+  if (user.role === 'CLIENT_BRANCH_USER' && user.branchId !== branchId) {
+    return { success: false, error: 'Access denied: Cannot place order for another branch.' };
   }
 
   try {
@@ -234,8 +243,8 @@ export async function approveOrderAction(
   adjustments: { itemId: string; approvedQty: number; replacedVariantId?: string; reject?: boolean }[]
 ): Promise<{ success: boolean; error?: string }> {
   const user = await getSession();
-  if (!user || user.role !== 'SUPERADMIN') {
-    return { success: false, error: 'Access denied! SuperAdmin authority is required.' };
+  if (!user || !checkPermission(user, 'APPROVE_ORDER')) {
+    return { success: false, error: 'Access denied! Missing required permissions.' };
   }
 
   try {
@@ -250,8 +259,8 @@ export async function approveOrderAction(
 
 export async function rejectOrderAction(orderId: string): Promise<{ success: boolean; error?: string }> {
   const user = await getSession();
-  if (!user || user.role !== 'SUPERADMIN') {
-    return { success: false, error: 'Access denied!' };
+  if (!user || !checkPermission(user, 'REJECT_ORDER')) {
+    return { success: false, error: 'Access denied! Missing required permissions.' };
   }
 
   try {
@@ -275,8 +284,8 @@ export async function createDispatchAction(
   items: { itemId: string; quantity: number }[]
 ): Promise<{ success: boolean; error?: string }> {
   const user = await getSession();
-  if (!user || (user.role !== 'SUPERADMIN' && user.role !== 'INVENTORY')) {
-    return { success: false, error: 'Access denied! Inventory Dept authorization required.' };
+  if (!user || !checkPermission(user, 'CREATE_DISPATCH')) {
+    return { success: false, error: 'Access denied! Missing required permissions.' };
   }
 
   try {
@@ -300,8 +309,8 @@ export async function createInvoiceAction(
   invoicePdfUrl: string
 ): Promise<{ success: boolean; error?: string }> {
   const user = await getSession();
-  if (!user || (user.role !== 'SUPERADMIN' && user.role !== 'ACCOUNTS')) {
-    return { success: false, error: 'Access denied! Accounts Dept authorization required.' };
+  if (!user || !checkPermission(user, 'GENERATE_INVOICE')) {
+    return { success: false, error: 'Access denied! Missing required permissions.' };
   }
 
   if (!invoiceNumber || amount <= 0 || !dueDateStr) {
@@ -332,8 +341,8 @@ export async function submitPaymentAction(
   attachmentUrl: string
 ): Promise<{ success: boolean; error?: string }> {
   const user = await getSession();
-  if (!user || user.role !== 'B2B_CUSTOMER' || !user.customerId) {
-    return { success: false, error: 'Session expired. Please login again.' };
+  if (!user || !checkPermission(user, 'UPLOAD_PAYMENT_REF') || !user.customerId) {
+    return { success: false, error: 'Session expired or invalid permissions. Please login.' };
   }
 
   if (amount <= 0 || !paymentDateStr || !utrNumber) {
@@ -365,8 +374,8 @@ export async function submitPaymentAction(
 // =============================================================================
 export async function verifyPaymentAction(paymentRefId: string): Promise<{ success: boolean; error?: string }> {
   const user = await getSession();
-  if (!user || (user.role !== 'SUPERADMIN' && user.role !== 'ACCOUNTS')) {
-    return { success: false, error: 'Access denied! Accounts Dept validation required.' };
+  if (!user || !checkPermission(user, 'VERIFY_PAYMENT_REF')) {
+    return { success: false, error: 'Access denied! Missing required permissions.' };
   }
 
   try {
@@ -381,8 +390,8 @@ export async function verifyPaymentAction(paymentRefId: string): Promise<{ succe
 
 export async function rejectPaymentAction(paymentRefId: string, reason: string): Promise<{ success: boolean; error?: string }> {
   const user = await getSession();
-  if (!user || (user.role !== 'SUPERADMIN' && user.role !== 'ACCOUNTS')) {
-    return { success: false, error: 'Access denied!' };
+  if (!user || !checkPermission(user, 'VERIFY_PAYMENT_REF')) {
+    return { success: false, error: 'Access denied! Missing required permissions.' };
   }
 
   if (!reason.trim()) return { success: false, error: 'Rejection reason is required.' };
@@ -402,7 +411,7 @@ export async function rejectPaymentAction(paymentRefId: string, reason: string):
 // =============================================================================
 export async function dismissNotificationsAction(): Promise<{ success: boolean; error?: string }> {
   const user = await getSession();
-  if (!user || user.role !== 'B2B_CUSTOMER' || !user.customerId) {
+  if (!user || !user.customerId || (user.role !== 'CLIENT_ADMIN' && user.role !== 'CLIENT_BRANCH_USER')) {
     return { success: false, error: 'Session expired.' };
   }
 
@@ -424,9 +433,20 @@ export async function getOrderDetailsAction(orderId: string): Promise<{ success:
     const details = await getSalesOrderDetails(orderId);
     if (!details) return { success: false, error: 'Order not found.' };
 
-    // Strict validation: B2B customers cannot query other customers' orders
-    if (user.role === 'B2B_CUSTOMER' && details.order.customerId !== user.customerId) {
-      return { success: false, error: 'Permission Denied! This order does not belong to your account.' };
+    // Validation boundary based on role and permissions
+    if (user.role === 'CLIENT_ADMIN') {
+      if (details.order.customerId !== user.customerId) {
+        return { success: false, error: 'Permission Denied! This order does not belong to your company.' };
+      }
+    } else if (user.role === 'CLIENT_BRANCH_USER') {
+      if (details.order.customerId !== user.customerId || details.order.branchId !== user.branchId) {
+        return { success: false, error: 'Permission Denied! This order does not belong to your assigned branch.' };
+      }
+    } else {
+      // Factory users: require VIEW_ORDER permission
+      if (!checkPermission(user, 'VIEW_ORDER') && !checkPermission(user, 'VIEW_CUSTOMER_ORDER') && !checkPermission(user, 'VIEW_APPROVED_ORDER')) {
+        return { success: false, error: 'Permission Denied! Missing required permissions.' };
+      }
     }
 
     return { success: true, data: details };
@@ -443,12 +463,8 @@ export async function createBranchAction(
   branchData: any
 ): Promise<{ success: boolean; error?: string; message?: string }> {
   const user = await getSession();
-  if (!user) {
-    return { success: false, error: 'Session expired.' };
-  }
-
-  if (user.role === 'B2B_CUSTOMER' && user.customerId !== customerId) {
-    return { success: false, error: 'Permission Denied.' };
+  if (!user || !checkPermission(user, 'MANAGE_CUSTOMER_BRANCH')) {
+    return { success: false, error: 'Access denied! Missing required permissions.' };
   }
 
   try {
@@ -473,8 +489,8 @@ export async function createOrderOnBehalfAction(
   remarks?: string
 ): Promise<{ success: boolean; error?: string; message?: string }> {
   const user = await getSession();
-  if (!user || user.role !== 'SUPERADMIN') {
-    return { success: false, error: 'Access denied! SuperAdmin authority is required.' };
+  if (!user || !checkPermission(user, 'CREATE_ORDER_BEHALF')) {
+    return { success: false, error: 'Access denied! Missing required permissions.' };
   }
 
   try {
@@ -495,8 +511,8 @@ export async function convertCustomItemAction(
   variantData: { sku: string; category: string; colorName: string; sizeName: string; costPrice: number }
 ): Promise<{ success: boolean; error?: string; variantId?: string }> {
   const user = await getSession();
-  if (!user || user.role !== 'SUPERADMIN') {
-    return { success: false, error: 'Access denied! SuperAdmin authority is required.' };
+  if (!user || !checkPermission(user, 'CREATE_PRODUCT')) {
+    return { success: false, error: 'Access denied! Missing required permissions.' };
   }
 
   try {
@@ -514,6 +530,7 @@ export async function convertCustomItemAction(
 // =============================================================================
 export async function createReturnRequestAction(
   data: {
+    id?: string;
     customerId: string;
     branchId?: string;
     orderId?: string;
@@ -525,14 +542,20 @@ export async function createReturnRequestAction(
   }
 ): Promise<{ success: boolean; error?: string; message?: string }> {
   const user = await getSession();
-  if (!user) {
-    return { success: false, error: 'Session expired.' };
+  if (!user || !checkPermission(user, 'CREATE_RETURN')) {
+    return { success: false, error: 'Access denied! Missing required permissions.' };
   }
 
-  const createdByType = user.role === 'B2B_CUSTOMER' ? 'CUSTOMER' : 'ADMIN';
+  const createdByType = (user.role === 'CLIENT_ADMIN' || user.role === 'CLIENT_BRANCH_USER') ? 'CUSTOMER' : 'ADMIN';
 
-  if (user.role === 'B2B_CUSTOMER' && user.customerId !== data.customerId) {
-    return { success: false, error: 'Permission Denied.' };
+  // Isolation Checks
+  if (user.role === 'CLIENT_ADMIN' && user.customerId !== data.customerId) {
+    return { success: false, error: 'Permission Denied! Customer mismatch.' };
+  }
+  if (user.role === 'CLIENT_BRANCH_USER') {
+    if (user.customerId !== data.customerId || user.branchId !== data.branchId) {
+      return { success: false, error: 'Permission Denied! Branch or customer mismatch.' };
+    }
   }
 
   try {
@@ -559,8 +582,8 @@ export async function resolveReturnRequestAction(
   receivedStatus: 'READY_STOCK' | 'REPAIRABLE' | 'SCRAP' | null
 ): Promise<{ success: boolean; error?: string }> {
   const user = await getSession();
-  if (!user || (user.role !== 'SUPERADMIN' && user.role !== 'ACCOUNTS' && user.role !== 'INVENTORY')) {
-    return { success: false, error: 'Access denied!' };
+  if (!user || !checkPermission(user, 'APPROVE_RETURN')) {
+    return { success: false, error: 'Access denied! Missing required permissions.' };
   }
 
   try {
@@ -578,12 +601,136 @@ export async function resolveReturnRequestAction(
 
 export async function getB2BCatalogAction(customerId?: string): Promise<{ success: boolean; data?: any; error?: string }> {
   const user = await getSession();
-  if (!user) return { success: false, error: 'Session expired.' };
+  if (!user || !checkPermission(user, 'VIEW_PRODUCT_CATALOGUE')) {
+    return { success: false, error: 'Access denied! Missing required permissions.' };
+  }
 
   try {
-    const data = await getB2BCatalog(customerId);
+    const data = await getB2BCatalog(user.customerId || customerId);
     return { success: true, data };
   } catch (err: any) {
     return { success: false, error: err.message };
+  }
+}
+
+// =============================================================================
+// CLIENT ADMIN USER MANAGEMENT ACTIONS
+// =============================================================================
+export async function getBranchUsersAction(customerId?: string): Promise<{ success: boolean; data?: any; error?: string }> {
+  const user = await getSession();
+  if (!user) return { success: false, error: 'Session expired.' };
+
+  let targetCustomerId = customerId;
+  if (user.role === 'CLIENT_ADMIN') {
+    targetCustomerId = user.customerId;
+  } else if (user.role === 'CLIENT_BRANCH_USER') {
+    return { success: false, error: 'Access denied! Branch users cannot manage other users.' };
+  } else {
+    if (!checkPermission(user, 'MANAGE_USER') && !checkPermission(user, 'MANAGE_CUSTOMER')) {
+      return { success: false, error: 'Access denied!' };
+    }
+  }
+
+  try {
+    const data = await getBranchUsers(targetCustomerId);
+    return { success: true, data };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+export async function createBranchUserAction(
+  prevState: any,
+  formData: FormData
+): Promise<{ success: boolean; error?: string; message?: string }> {
+  const user = await getSession();
+  if (!user) return { success: false, error: 'Session expired.' };
+
+  const customerId = formData.get('customerId') as string;
+  const branchId = formData.get('branchId') as string;
+  const username = (formData.get('username') as string || '').trim();
+  const password = (formData.get('password') as string || '').trim();
+  const fullName = (formData.get('fullName') as string || '').trim();
+  const email = (formData.get('email') as string || '').trim().toLowerCase();
+
+  // Isolation & Permission check:
+  if (user.role === 'CLIENT_ADMIN') {
+    if (user.customerId !== customerId) {
+      return { success: false, error: 'Permission Denied! Cannot manage another customer.' };
+    }
+    if (!checkPermission(user, 'CREATE_BRANCH_USER')) {
+      return { success: false, error: 'Permission Denied! Missing CREATE_BRANCH_USER permission.' };
+    }
+  } else {
+    if (!checkPermission(user, 'MANAGE_CUSTOMER') && !checkPermission(user, 'MANAGE_USER')) {
+      return { success: false, error: 'Permission Denied.' };
+    }
+  }
+
+  if (!customerId || !branchId || !username || !password || !fullName || !email) {
+    return { success: false, error: 'All fields are required.' };
+  }
+
+  // Hash password
+  const { hashPassword } = await import('@/utils/session');
+  const passwordHash = hashPassword(password);
+
+  try {
+    await createBranchUser(customerId, branchId, username, passwordHash, fullName, email);
+    revalidatePath('/admin/b2b/customers');
+    revalidatePath('/b2b/settings/users');
+    return { success: true, message: 'Branch login user successfully registered!' };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Failed to create branch user.' };
+  }
+}
+
+export async function updateBranchUserAction(
+  userId: string,
+  data: { fullName?: string; email?: string; active?: boolean; password?: string; branchId?: string }
+): Promise<{ success: boolean; error?: string }> {
+  const user = await getSession();
+  if (!user) return { success: false, error: 'Session expired.' };
+
+  try {
+    const branchUsersList = await getBranchUsers();
+    const targetUser = branchUsersList.find((bu: any) => bu.id === userId);
+    if (!targetUser) {
+      return { success: false, error: 'Branch user not found.' };
+    }
+
+    // Isolation & Permission check:
+    if (user.role === 'CLIENT_ADMIN') {
+      if (user.customerId !== targetUser.customerId) {
+        return { success: false, error: 'Permission Denied! Access boundaries restricted.' };
+      }
+      if (data.active === false) {
+        if (!checkPermission(user, 'DISABLE_BRANCH_USER')) {
+          return { success: false, error: 'Permission Denied! Missing DISABLE_BRANCH_USER.' };
+        }
+      } else {
+        if (!checkPermission(user, 'EDIT_BRANCH_USER')) {
+          return { success: false, error: 'Permission Denied! Missing EDIT_BRANCH_USER.' };
+        }
+      }
+    } else {
+      if (!checkPermission(user, 'MANAGE_CUSTOMER') && !checkPermission(user, 'MANAGE_USER')) {
+        return { success: false, error: 'Permission Denied.' };
+      }
+    }
+
+    const updateData: any = { ...data };
+    if (data.password) {
+      const { hashPassword } = await import('@/utils/session');
+      updateData.passwordHash = hashPassword(data.password);
+      delete updateData.password;
+    }
+
+    await updateBranchUser(userId, updateData);
+    revalidatePath('/admin/b2b/customers');
+    revalidatePath('/b2b/settings/users');
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Failed to update branch user.' };
   }
 }

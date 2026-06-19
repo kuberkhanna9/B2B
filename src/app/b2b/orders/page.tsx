@@ -8,7 +8,7 @@ export const revalidate = 0;
 
 export default async function CustomerOrdersPage() {
   const user = await getSession();
-  if (!user || user.role !== 'B2B_CUSTOMER' || !user.customerId) {
+  if (!user || (user.role !== 'CLIENT_ADMIN' && user.role !== 'CLIENT_BRANCH_USER') || !user.customerId) {
     redirect('/login');
   }
 

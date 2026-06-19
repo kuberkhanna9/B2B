@@ -57,6 +57,7 @@ interface CartItem {
   price: number;
   mrp: number;
   availableStock: number;
+  category?: string;
 }
 
 export default function CatalogClient({ catalog, categories, colors, sizes, branches }: CatalogClientProps) {
@@ -99,15 +100,21 @@ export default function CatalogClient({ catalog, categories, colors, sizes, bran
       return matchesSearch && matchesCategory && prod.variants.length > 0;
     });
 
+  const isProductMadeToOrder = (prodCategory: string) => {
+    const cat = (prodCategory || '').toUpperCase();
+    return cat.includes('PONCHO') || cat.includes('SWEATER');
+  };
+
   // Cart Management Functions
-  const addToCart = (variant: CatalogVariant, productName: string) => {
-    if (variant.availableStock <= 0) return;
+  const addToCart = (variant: CatalogVariant, productName: string, category: string) => {
+    const isMadeToOrder = isProductMadeToOrder(category);
+    if (variant.availableStock <= 0 && !isMadeToOrder) return;
 
     setCart(prev => {
       const exists = prev.find(item => item.variantId === variant.variantId);
       if (exists) {
-        // Limit to available stock
-        const nextQty = Math.min(exists.quantity + 1, variant.availableStock);
+        const maxLimit = isMadeToOrder ? 99999 : variant.availableStock;
+        const nextQty = Math.min(exists.quantity + 1, maxLimit);
         return prev.map(item => item.variantId === variant.variantId ? { ...item, quantity: nextQty } : item);
       }
       return [...prev, {
@@ -119,7 +126,8 @@ export default function CatalogClient({ catalog, categories, colors, sizes, bran
         quantity: 1,
         price: variant.customerPrice,
         mrp: variant.mrp,
-        availableStock: variant.availableStock
+        availableStock: variant.availableStock,
+        category
       }];
     });
     
@@ -131,7 +139,9 @@ export default function CatalogClient({ catalog, categories, colors, sizes, bran
     setCart(prev => {
       return prev.map(item => {
         if (item.variantId === variantId) {
-          const nextQty = Math.max(1, Math.min(item.quantity + delta, item.availableStock));
+          const isMadeToOrder = isProductMadeToOrder(item.category || '');
+          const maxLimit = isMadeToOrder ? 99999 : item.availableStock;
+          const nextQty = Math.max(1, Math.min(item.quantity + delta, maxLimit));
           return { ...item, quantity: nextQty };
         }
         return item;
@@ -295,41 +305,54 @@ export default function CatalogClient({ catalog, categories, colors, sizes, bran
                     <thead>
                       <tr className="bg-slate-100 border-b border-slate-150 text-[8px] font-black uppercase text-slate-450 tracking-wider">
                         <th className="px-3 py-2">Color/Size</th>
-                        <th className="px-3 py-2 text-right">Available</th>
-                        <th className="px-3 py-2 text-right">Your Price</th>
+                        <th className="px-3 py-2 text-right">WSP</th>
+                        <th className="px-3 py-2 text-right">MRP</th>
                         <th className="px-3 py-2 text-center">Action</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-150">
                       {product.variants.map(v => {
                         const inCart = cart.find(item => item.variantId === v.variantId);
+                        const isMadeToOrder = isProductMadeToOrder(product.category);
                         return (
                           <tr key={v.variantId} className="hover:bg-slate-100/30 transition-colors">
                             <td className="px-3 py-2.5 font-bold text-slate-800">
                               <span className="block">{v.colorName} / {v.sizeName}</span>
-                              <span className="text-[8px] text-slate-400 font-semibold uppercase">{v.sku}</span>
+                              <span className="text-[8px] text-slate-400 font-semibold uppercase block">{v.sku}</span>
+                              {/* Availability Badge */}
+                              {(() => {
+                                let badgeText = 'Available';
+                                let badgeColorClass = 'text-emerald-600';
+                                if (v.availableStock > 5) {
+                                  badgeText = 'Available';
+                                  badgeColorClass = 'text-emerald-600';
+                                } else if (v.availableStock >= 1) {
+                                  badgeText = 'Limited Availability';
+                                  badgeColorClass = 'text-amber-600';
+                                } else if (isMadeToOrder) {
+                                  badgeText = 'Made To Order';
+                                  badgeColorClass = 'text-indigo-600';
+                                } else {
+                                  badgeText = 'Out Of Stock';
+                                  badgeColorClass = 'text-rose-500';
+                                }
+                                return (
+                                  <span className={`inline-flex items-center gap-1 mt-1 text-[9px] font-extrabold ${badgeColorClass}`}>
+                                    <span className="text-[10px]">●</span> {badgeText}
+                                  </span>
+                                );
+                              })()}
                             </td>
-                            <td className="px-3 py-2.5 text-right font-bold">
-                              {v.availableStock > 0 ? (
-                                <span className={v.availableStock <= 5 ? 'text-amber-600' : 'text-emerald-600'}>
-                                  {v.availableStock} <span className="text-[8px] font-semibold text-slate-400">pcs</span>
-                                </span>
-                              ) : (
-                                <span className="text-red-500 font-extrabold uppercase">Out of Stock</span>
-                              )}
+                            <td className="px-3 py-2.5 text-right font-black text-slate-950">
+                              {formatCurrency(v.customerPrice)}
                             </td>
-                            <td className="px-3 py-2.5 text-right">
-                              <span className="font-black text-slate-950 block">{formatCurrency(v.customerPrice)}</span>
-                              {v.customerPrice < v.mrp && (
-                                <span className="text-[8px] text-slate-400 font-bold line-through block mt-0.5">
-                                  MRP {formatCurrency(v.mrp)}
-                                </span>
-                              )}
+                            <td className="px-3 py-2.5 text-right font-bold text-slate-500">
+                              {formatCurrency(v.mrp)}
                             </td>
                             <td className="px-3 py-2.5 text-center">
                               <button
-                                onClick={() => addToCart(v, product.productName)}
-                                disabled={v.availableStock <= 0}
+                                onClick={() => addToCart(v, product.productName, product.category)}
+                                disabled={v.availableStock <= 0 && !isMadeToOrder}
                                 className={`font-black text-[9px] px-2 py-1 rounded-lg border transition-all ${
                                   inCart
                                     ? 'bg-slate-100 text-slate-900 border-slate-300'
@@ -415,7 +438,7 @@ export default function CatalogClient({ catalog, categories, colors, sizes, bran
                           <span className="font-extrabold w-4 text-center text-[10px]">{item.quantity}</span>
                           <button
                             onClick={() => updateCartQty(item.variantId, 1)}
-                            disabled={item.quantity >= item.availableStock}
+                            disabled={item.quantity >= (isProductMadeToOrder(item.category || '') ? 99999 : item.availableStock)}
                             className="text-slate-500 hover:bg-slate-100 p-0.5 rounded cursor-pointer disabled:opacity-30"
                           >
                             <Plus size={10} />

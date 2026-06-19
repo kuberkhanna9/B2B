@@ -24,7 +24,7 @@ import { logoutAction } from '@/app/actions';
 interface NavigationProps {
   user: {
     fullName: string;
-    role: 'SUPERADMIN' | 'ACCOUNTS' | 'INVENTORY' | 'RETAIL' | 'B2B_CUSTOMER';
+    role: string;
   };
 }
 
@@ -32,7 +32,7 @@ export default function Navigation({ user }: NavigationProps) {
   const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
 
-  const isB2BCustomer = user.role === 'B2B_CUSTOMER';
+  const isB2BCustomer = user.role === 'B2B_CUSTOMER' || user.role === 'CLIENT_ADMIN' || user.role === 'CLIENT_BRANCH_USER';
 
   // Navigation Links definition
   const customerLinks = [
@@ -40,10 +40,20 @@ export default function Navigation({ user }: NavigationProps) {
     { name: 'Product Catalogue', href: '/b2b/catalog', icon: Package },
     { name: 'My Orders', href: '/b2b/orders', icon: ShoppingCart },
     { name: 'My Invoices', href: '/b2b/invoices', icon: Receipt },
-    { name: 'Ledger Card', href: '/b2b/ledger', icon: Layers },
-    { name: 'Documents', href: '/b2b/documents', icon: FileText },
-    { name: 'Notifications', href: '/b2b/notifications', icon: Bell },
   ];
+
+  if (user.role !== 'CLIENT_BRANCH_USER') {
+    customerLinks.push({ name: 'Ledger Card', href: '/b2b/ledger', icon: Layers });
+  }
+
+  if (user.role === 'CLIENT_ADMIN') {
+    customerLinks.push({ name: 'Branch Users', href: '/b2b/users', icon: Users });
+  }
+
+  customerLinks.push(
+    { name: 'Documents', href: '/b2b/documents', icon: FileText },
+    { name: 'Notifications', href: '/b2b/notifications', icon: Bell }
+  );
 
   const adminLinks = [
     { name: 'Admin Dashboard', href: '/', icon: LayoutDashboard },
@@ -54,13 +64,17 @@ export default function Navigation({ user }: NavigationProps) {
     adminLinks.push({ name: 'Order Approvals', href: '/admin/b2b/orders', icon: ShoppingCart });
   }
 
-  if (user.role === 'SUPERADMIN' || user.role === 'INVENTORY') {
+  if (user.role === 'SUPERADMIN' || user.role === 'INVENTORY_DEPARTMENT' || user.role === 'INVENTORY') {
     adminLinks.push({ name: 'Dispatches & Shipments', href: '/admin/b2b/dispatches', icon: Ship });
   }
 
-  if (user.role === 'SUPERADMIN' || user.role === 'ACCOUNTS') {
+  if (user.role === 'SUPERADMIN' || user.role === 'ACCOUNTS_DEPARTMENT' || user.role === 'ACCOUNTS') {
     adminLinks.push({ name: 'Invoice Billing', href: '/admin/b2b/invoices', icon: Receipt });
     adminLinks.push({ name: 'Verify Payments', href: '/admin/b2b/payments', icon: CreditCard });
+  }
+
+  if (user.role === 'SUPERADMIN') {
+    adminLinks.push({ name: 'Permission Matrix', href: '/admin/b2b/settings/permissions', icon: ShieldAlert });
   }
 
   const activeLinks = isB2BCustomer ? customerLinks : adminLinks;
@@ -133,6 +147,10 @@ export default function Navigation({ user }: NavigationProps) {
             <span className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wider">Session Active:</span>
             <span className="text-xs font-black text-slate-900 leading-tight truncate">
               {user.role === 'SUPERADMIN' && 'SuperAdmin'}
+              {user.role === 'ACCOUNTS_DEPARTMENT' && 'Accounts Department'}
+              {user.role === 'INVENTORY_DEPARTMENT' && 'Inventory Department'}
+              {user.role === 'CLIENT_ADMIN' && 'Client Admin'}
+              {user.role === 'CLIENT_BRANCH_USER' && 'Branch User'}
               {user.role === 'ACCOUNTS' && 'Accounts Department'}
               {user.role === 'INVENTORY' && 'Inventory Department'}
               {user.role === 'RETAIL' && 'Retail Department'}

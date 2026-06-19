@@ -26,6 +26,10 @@ export default function ReturnsAdminClient({ returnRequests, userRole }: Returns
   const [selectedRequest, setSelectedRequest] = useState<any | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
 
+  // Lightbox Zoom Preview
+  const [activePhotoUrl, setActivePhotoUrl] = useState<string | null>(null);
+  const [zoomScale, setZoomScale] = useState(1);
+
   // Form Fields
   const [resolutionType, setResolutionType] = useState<'Replace' | 'Credit Note' | 'Refund' | 'Repair' | 'Reject Claim'>('Credit Note');
   const [receivedStatus, setReceivedStatus] = useState<'READY_STOCK' | 'REPAIRABLE' | 'SCRAP' | ''>('');
@@ -269,18 +273,17 @@ export default function ReturnsAdminClient({ returnRequests, userRole }: Returns
                       <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">Claim Evidence Photos</span>
                       <div className="flex flex-wrap gap-3">
                         {selectedRequest.photos.map((pUrl: string, idx: number) => (
-                          <a
+                          <button
                             key={idx}
-                            href={pUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="w-20 h-20 border border-slate-200 rounded-xl overflow-hidden hover:opacity-80 transition-all flex items-center justify-center bg-slate-50 relative group"
+                            type="button"
+                            onClick={() => { setActivePhotoUrl(pUrl); setZoomScale(1); }}
+                            className="w-20 h-20 border border-slate-200 rounded-xl overflow-hidden hover:opacity-80 transition-all flex items-center justify-center bg-slate-50 relative group cursor-pointer"
                           >
                             <img src={pUrl} alt="damage-evidence" className="w-full h-full object-cover" />
                             <div className="absolute inset-0 bg-slate-950/20 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
                               <ImageIcon size={14} className="text-white" />
                             </div>
-                          </a>
+                          </button>
                         ))}
                       </div>
                     </div>
@@ -376,6 +379,46 @@ export default function ReturnsAdminClient({ returnRequests, userRole }: Returns
                 )}
               </form>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Lightbox / Zoom Modal */}
+      {activePhotoUrl && (
+        <div className="fixed inset-0 z-[100] bg-slate-950/90 flex flex-col items-center justify-center p-4">
+          <div className="absolute top-4 right-4 flex items-center gap-3">
+            <button
+              onClick={() => setZoomScale(prev => Math.min(prev + 0.25, 3))}
+              className="bg-slate-800/80 hover:bg-slate-700 text-white rounded-xl p-2 px-3 font-bold text-xs cursor-pointer select-none transition-colors border border-slate-700"
+            >
+              Zoom In
+            </button>
+            <button
+              onClick={() => setZoomScale(prev => Math.max(prev - 0.25, 0.5))}
+              className="bg-slate-800/80 hover:bg-slate-700 text-white rounded-xl p-2 px-3 font-bold text-xs cursor-pointer select-none transition-colors border border-slate-700"
+            >
+              Zoom Out
+            </button>
+            <button
+              onClick={() => { setActivePhotoUrl(null); setZoomScale(1); }}
+              className="bg-slate-800/80 hover:bg-slate-700 text-white rounded-xl p-2 cursor-pointer transition-colors border border-slate-700"
+            >
+              <X size={18} />
+            </button>
+          </div>
+          
+          <div className="flex-1 w-full flex items-center justify-center overflow-auto">
+            <img 
+              src={activePhotoUrl} 
+              alt="Evidence Full Size" 
+              style={{ transform: `scale(${zoomScale})` }}
+              className="max-h-[85vh] max-w-full object-contain rounded-lg transition-transform duration-250 ease-out cursor-zoom-in"
+              onClick={() => setZoomScale(prev => prev === 1 ? 2 : 1)}
+            />
+          </div>
+
+          <div className="text-slate-400 text-[10px] pb-2 font-semibold">
+            Click image to toggle 2x zoom. Scroll or use controls to adjust.
           </div>
         </div>
       )}

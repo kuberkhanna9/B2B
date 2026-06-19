@@ -167,13 +167,18 @@ export const priceHistory = pgTable('price_history', {
 export const auditLogs = pgTable('audit_logs', {
   id: uuid('id').defaultRandom().primaryKey(),
   userId: uuid('user_id').references(() => profiles.id, { onDelete: 'set null' }),
+  username: varchar('username', { length: 100 }),
+  role: varchar('role', { length: 100 }),
+  entity: varchar('entity', { length: 100 }),
   action: varchar('action', { length: 255 }).notNull(),
   module: varchar('module', { length: 100 }).notNull(),
   description: varchar('description', { length: 1000 }).notNull(),
   oldValue: text('old_value'),
   newValue: text('new_value'),
+  ipAddress: varchar('ip_address', { length: 50 }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
+
 
 // =============================================================================
 // NEW B2B CUSTOMER PORTAL TABLES
@@ -392,6 +397,15 @@ export const returnAttachments = pgTable('return_attachments', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
+// 26b. RETURN_CLAIM_IMAGES Table
+export const returnClaimImages = pgTable('return_claim_images', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  returnId: uuid('return_id').references(() => returnRequests.id, { onDelete: 'cascade' }).notNull(),
+  imageUrl: varchar('image_url', { length: 1000 }).notNull(),
+  uploadedBy: uuid('uploaded_by'),
+  uploadedAt: timestamp('uploaded_at').defaultNow().notNull(),
+});
+
 // 27. RETURN_RESOLUTIONS Table
 export const returnResolutions = pgTable('return_resolutions', {
   id: uuid('id').defaultRandom().primaryKey(),
@@ -465,7 +479,9 @@ export const customersRelations = relations(customers, ({ many }) => ({
   notifications: many(notifications),
   branches: many(customerBranches),
   returns: many(returnRequests),
+  branchUsers: many(branchUsers),
 }));
+
 
 export const customerUsersRelations = relations(customerUsers, ({ one }) => ({
   customer: one(customers, {
@@ -591,7 +607,9 @@ export const customerBranchesRelations = relations(customerBranches, ({ one, man
   }),
   orders: many(salesOrders),
   returns: many(returnRequests),
+  branchUsers: many(branchUsers),
 }));
+
 
 export const orderSourcesRelations = relations(orderSources, ({ many }) => ({
   orders: many(salesOrders),
@@ -623,6 +641,7 @@ export const returnRequestsRelations = relations(returnRequests, ({ one, many })
   }),
   items: many(returnRequestItems),
   attachments: many(returnAttachments),
+  images: many(returnClaimImages),
   resolutions: many(returnResolutions),
 }));
 
@@ -644,6 +663,13 @@ export const returnAttachmentsRelations = relations(returnAttachments, ({ one })
   }),
 }));
 
+export const returnClaimImagesRelations = relations(returnClaimImages, ({ one }) => ({
+  returnRequest: one(returnRequests, {
+    fields: [returnClaimImages.returnId],
+    references: [returnRequests.id],
+  }),
+}));
+
 export const returnResolutionsRelations = relations(returnResolutions, ({ one }) => ({
   returnRequest: one(returnRequests, {
     fields: [returnResolutions.returnRequestId],
@@ -654,3 +680,86 @@ export const returnResolutionsRelations = relations(returnResolutions, ({ one })
     references: [profiles.id],
   }),
 }));
+
+// =============================================================================
+// PRODUCTION-GRADE RBAC TABLES
+// =============================================================================
+
+export const roles = pgTable('roles', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  name: varchar('name', { length: 50 }).unique().notNull(),
+  description: varchar('description', { length: 255 }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+export const permissions = pgTable('permissions', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  code: varchar('code', { length: 100 }).unique().notNull(),
+  description: varchar('description', { length: 255 }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+export const rolePermissions = pgTable('role_permissions', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  roleId: uuid('role_id').references(() => roles.id, { onDelete: 'cascade' }).notNull(),
+  permissionId: uuid('permission_id').references(() => permissions.id, { onDelete: 'cascade' }).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+export const userRoles = pgTable('user_roles', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: uuid('user_id').notNull(),
+  roleId: uuid('role_id').references(() => roles.id, { onDelete: 'cascade' }).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+export const branchUsers = pgTable('branch_users', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  customerId: uuid('customer_id').references(() => customers.id, { onDelete: 'cascade' }).notNull(),
+  branchId: uuid('branch_id').references(() => customerBranches.id, { onDelete: 'cascade' }).notNull(),
+  username: varchar('username', { length: 100 }).unique().notNull(),
+  passwordHash: varchar('password_hash', { length: 255 }).notNull(),
+  fullName: varchar('full_name', { length: 255 }).notNull(),
+  email: varchar('email', { length: 255 }),
+  active: boolean('active').default(true).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+export const rolesRelations = relations(roles, ({ many }) => ({
+  rolePermissions: many(rolePermissions),
+  userRoles: many(userRoles),
+}));
+
+export const permissionsRelations = relations(permissions, ({ many }) => ({
+  rolePermissions: many(rolePermissions),
+}));
+
+export const rolePermissionsRelations = relations(rolePermissions, ({ one }) => ({
+  role: one(roles, {
+    fields: [rolePermissions.roleId],
+    references: [roles.id],
+  }),
+  permission: one(permissions, {
+    fields: [rolePermissions.permissionId],
+    references: [permissions.id],
+  }),
+}));
+
+export const userRolesRelations = relations(userRoles, ({ one }) => ({
+  role: one(roles, {
+    fields: [userRoles.roleId],
+    references: [roles.id],
+  }),
+}));
+
+export const branchUsersRelations = relations(branchUsers, ({ one }) => ({
+  customer: one(customers, {
+    fields: [branchUsers.customerId],
+    references: [customers.id],
+  }),
+  branch: one(customerBranches, {
+    fields: [branchUsers.branchId],
+    references: [customerBranches.id],
+  }),
+}));
+

@@ -31,16 +31,55 @@ async function db_logB2BAuditDetailed(
   module: string,
   description: string,
   oldValue?: string | null,
-  newValue?: string | null
+  newValue?: string | null,
+  role?: string | null,
+  entity?: string | null,
+  ipAddress?: string | null,
+  username?: string | null
 ) {
   try {
+    let finalUserId = userId;
+    let finalUsername = username;
+    let finalRole = role;
+    let finalIp = ipAddress;
+
+    // Resolve session if needed
+    if (!finalUserId || !finalUsername || !finalRole) {
+      try {
+        const { getSession } = await import('./session');
+        const session = await getSession();
+        if (session) {
+          if (!finalUserId) finalUserId = session.id;
+          if (!finalUsername) finalUsername = session.username;
+          if (!finalRole) finalRole = session.role;
+        }
+      } catch (err) {
+        // Silently ignore if cookies/session cannot be accessed
+      }
+    }
+
+    // Resolve IP address from headers if not provided
+    if (!finalIp) {
+      try {
+        const { headers } = await import('next/headers');
+        const headersList = await headers();
+        finalIp = headersList.get('x-forwarded-for') || headersList.get('x-real-ip') || '127.0.0.1';
+      } catch (err) {
+        // Silently ignore if headers cannot be accessed
+      }
+    }
+
     await db.insert(schema.auditLogs).values({
-      userId: userId && !userId.startsWith('cust-') && userId.length === 36 ? userId : null,
+      userId: finalUserId && !finalUserId.startsWith('cust-') && finalUserId.length === 36 ? finalUserId : null,
+      username: finalUsername || null,
+      role: finalRole || null,
+      entity: entity || null,
       action,
       module,
       description,
       oldValue: oldValue || null,
       newValue: newValue || null,
+      ipAddress: finalIp || null,
       createdAt: new Date()
     });
   } catch (err) {
@@ -48,8 +87,17 @@ async function db_logB2BAuditDetailed(
   }
 }
 
-async function db_logB2BAudit(userId: string | null, action: string, module: string, description: string) {
-  await db_logB2BAuditDetailed(userId, action, module, description, null, null);
+async function db_logB2BAudit(
+  userId: string | null,
+  action: string,
+  module: string,
+  description: string,
+  role?: string | null,
+  entity?: string | null,
+  ipAddress?: string | null,
+  username?: string | null
+) {
+  await db_logB2BAuditDetailed(userId, action, module, description, null, null, role, entity, ipAddress, username);
 }
 
 // =============================================================================
@@ -154,6 +202,75 @@ async function db_createCustomerUser(
   };
 }
 
+async function db_getBranchUsers(customerId?: string) {
+  const res = customerId
+    ? await db.select().from(schema.branchUsers).where(eq(schema.branchUsers.customerId, customerId))
+    : await db.select().from(schema.branchUsers);
+  return res.map(u => ({
+    id: u.id,
+    customerId: u.customerId,
+    branchId: u.branchId,
+    username: u.username,
+    fullName: u.fullName,
+    email: u.email || undefined,
+    active: u.active,
+    createdAt: u.createdAt.toISOString()
+  }));
+}
+
+async function db_createBranchUser(
+  customerId: string,
+  branchId: string,
+  username: string,
+  passwordHash: string,
+  fullName: string,
+  email: string
+) {
+  const res = await db.insert(schema.branchUsers).values({
+    customerId,
+    branchId,
+    username,
+    passwordHash,
+    fullName,
+    email: email.toLowerCase()
+  }).returning();
+
+  const u = res[0];
+  const branchUserRole = await db.select().from(schema.roles).where(eq(schema.roles.name, 'CLIENT_BRANCH_USER')).limit(1);
+  if (branchUserRole.length > 0) {
+    await db.insert(schema.userRoles).values({
+      userId: u.id,
+      roleId: branchUserRole[0].id
+    });
+  }
+
+  await logB2BAudit(null, 'BRANCH_USER_CREATE', 'B2B_USERS', `Created branch user portal login for "${u.fullName}" (${u.username})`);
+
+  return {
+    id: u.id,
+    customerId: u.customerId,
+    branchId: u.branchId,
+    username: u.username,
+    fullName: u.fullName,
+    email: u.email || undefined,
+    active: u.active,
+    createdAt: u.createdAt.toISOString()
+  };
+}
+
+async function db_updateBranchUser(userId: string, data: any) {
+  const updateData: any = {};
+  if (data.fullName !== undefined) updateData.fullName = data.fullName;
+  if (data.email !== undefined) updateData.email = data.email;
+  if (data.active !== undefined) updateData.active = data.active;
+  if (data.passwordHash !== undefined) updateData.passwordHash = data.passwordHash;
+  if (data.branchId !== undefined) updateData.branchId = data.branchId;
+
+  await db.update(schema.branchUsers).set(updateData).where(eq(schema.branchUsers.id, userId));
+  await logB2BAudit(null, 'BRANCH_USER_UPDATE', 'B2B_USERS', `Updated branch user portal login for ID: ${userId}`);
+  return true;
+}
+
 // =============================================================================
 // CUSTOMER SPECIFIC PRICING (SUPERADMIN ONLY)
 // =============================================================================
@@ -223,6 +340,13 @@ export interface CatalogProduct {
 }
 
 async function db_getB2BCatalog(customerId?: string): Promise<CatalogProduct[]> {
+  const { getSession } = await import('./session');
+  const session = await getSession();
+  if (session) {
+    if (session.role === 'CLIENT_BRANCH_USER' || session.role === 'CLIENT_ADMIN') {
+      customerId = session.customerId;
+    }
+  }
   // 1. Fetch physical stock transactions to compile current physical stock
   const txRes = await db.select().from(schema.stockTransactions);
   const transactions: StockTransaction[] = txRes.map(t => ({
@@ -365,6 +489,9 @@ async function db_markNotificationsAsRead(customerId: string): Promise<boolean> 
 // SALES ORDERING SYSTEM
 // =============================================================================
 async function db_getSalesOrders(customerId?: string): Promise<SalesOrder[]> {
+  const { getSession } = await import('./session');
+  const session = await getSession();
+
   let q = db.select({
     id: schema.salesOrders.id,
     orderNumber: schema.salesOrders.orderNumber,
@@ -382,24 +509,22 @@ async function db_getSalesOrders(customerId?: string): Promise<SalesOrder[]> {
   .innerJoin(schema.customers, eq(schema.salesOrders.customerId, schema.customers.id))
   .orderBy(desc(schema.salesOrders.createdAt));
 
-  if (customerId) {
-    q = db.select({
-      id: schema.salesOrders.id,
-      orderNumber: schema.salesOrders.orderNumber,
-      customerId: schema.salesOrders.customerId,
-      createdBy: schema.salesOrders.createdBy,
-      status: schema.salesOrders.status,
-      totalAmount: schema.salesOrders.totalAmount,
-      remarks: schema.salesOrders.remarks,
-      approvedBy: schema.salesOrders.approvedBy,
-      approvedAt: schema.salesOrders.approvedAt,
-      createdAt: schema.salesOrders.createdAt,
-      companyName: schema.customers.companyName
-    })
-    .from(schema.salesOrders)
-    .innerJoin(schema.customers, eq(schema.salesOrders.customerId, schema.customers.id))
-    .where(eq(schema.salesOrders.customerId, customerId))
-    .orderBy(desc(schema.salesOrders.createdAt)) as any;
+  let filterConditions = [];
+  if (session) {
+    if (session.role === 'CLIENT_BRANCH_USER') {
+      filterConditions.push(eq(schema.salesOrders.customerId, session.customerId || ''));
+      filterConditions.push(eq(schema.salesOrders.branchId, session.branchId || ''));
+    } else if (session.role === 'CLIENT_ADMIN') {
+      filterConditions.push(eq(schema.salesOrders.customerId, session.customerId || ''));
+    } else if (customerId) {
+      filterConditions.push(eq(schema.salesOrders.customerId, customerId));
+    }
+  } else if (customerId) {
+    filterConditions.push(eq(schema.salesOrders.customerId, customerId));
+  }
+
+  if (filterConditions.length > 0) {
+    q = q.where(and(...filterConditions)) as any;
   }
 
   const res = await q;
@@ -419,10 +544,14 @@ async function db_getSalesOrders(customerId?: string): Promise<SalesOrder[]> {
 }
 
 async function db_getSalesOrderDetails(orderId: string): Promise<{ order: SalesOrder; items: SalesOrderItem[] } | null> {
+  const { getSession } = await import('./session');
+  const session = await getSession();
+
   const oRes = await db.select({
     id: schema.salesOrders.id,
     orderNumber: schema.salesOrders.orderNumber,
     customerId: schema.salesOrders.customerId,
+    branchId: schema.salesOrders.branchId,
     createdBy: schema.salesOrders.createdBy,
     status: schema.salesOrders.status,
     totalAmount: schema.salesOrders.totalAmount,
@@ -439,6 +568,18 @@ async function db_getSalesOrderDetails(orderId: string): Promise<{ order: SalesO
 
   if (oRes.length === 0) return null;
   const o = oRes[0];
+
+  if (session) {
+    if (session.role === 'CLIENT_BRANCH_USER') {
+      if (o.customerId !== session.customerId || o.branchId !== session.branchId) {
+        return null;
+      }
+    } else if (session.role === 'CLIENT_ADMIN') {
+      if (o.customerId !== session.customerId) {
+        return null;
+      }
+    }
+  }
 
   const itemsRes = await db.select({
     id: schema.salesOrderItems.id,
@@ -754,6 +895,9 @@ async function db_rejectSalesOrder(orderId: string, adminProfileId: string): Pro
 // DISPATCH MANAGEMENT (INVENTORY DEPT)
 // =============================================================================
 async function db_getDispatches(customerId?: string): Promise<Dispatch[]> {
+  const { getSession } = await import('./session');
+  const session = await getSession();
+
   let q = db.select({
     id: schema.dispatches.id,
     orderId: schema.dispatches.orderId,
@@ -770,23 +914,22 @@ async function db_getDispatches(customerId?: string): Promise<Dispatch[]> {
   .innerJoin(schema.salesOrders, eq(schema.dispatches.orderId, schema.salesOrders.id))
   .orderBy(desc(schema.dispatches.createdAt));
 
-  if (customerId) {
-    q = db.select({
-      id: schema.dispatches.id,
-      orderId: schema.dispatches.orderId,
-      dispatchNumber: schema.dispatches.dispatchNumber,
-      courier: schema.dispatches.courier,
-      trackingNumber: schema.dispatches.trackingNumber,
-      dispatchDate: schema.dispatches.dispatchDate,
-      remarks: schema.dispatches.remarks,
-      createdBy: schema.dispatches.createdBy,
-      createdAt: schema.dispatches.createdAt,
-      orderNumber: schema.salesOrders.orderNumber
-    })
-    .from(schema.dispatches)
-    .innerJoin(schema.salesOrders, eq(schema.dispatches.orderId, schema.salesOrders.id))
-    .where(eq(schema.salesOrders.customerId, customerId))
-    .orderBy(desc(schema.dispatches.createdAt)) as any;
+  let filterConditions = [];
+  if (session) {
+    if (session.role === 'CLIENT_BRANCH_USER') {
+      filterConditions.push(eq(schema.salesOrders.customerId, session.customerId || ''));
+      filterConditions.push(eq(schema.salesOrders.branchId, session.branchId || ''));
+    } else if (session.role === 'CLIENT_ADMIN') {
+      filterConditions.push(eq(schema.salesOrders.customerId, session.customerId || ''));
+    } else if (customerId) {
+      filterConditions.push(eq(schema.salesOrders.customerId, customerId));
+    }
+  } else if (customerId) {
+    filterConditions.push(eq(schema.salesOrders.customerId, customerId));
+  }
+
+  if (filterConditions.length > 0) {
+    q = q.where(and(...filterConditions)) as any;
   }
 
   const res = await q;
@@ -960,6 +1103,9 @@ async function db_createDispatch(
 // INVOICES & LEDGER MANAGEMENT (ACCOUNTS / ADMIN)
 // =============================================================================
 async function db_getInvoices(customerId?: string): Promise<Invoice[]> {
+  const { getSession } = await import('./session');
+  const session = await getSession();
+
   let q = db.select({
     id: schema.invoices.id,
     orderId: schema.invoices.orderId,
@@ -979,26 +1125,22 @@ async function db_getInvoices(customerId?: string): Promise<Invoice[]> {
   .innerJoin(schema.customers, eq(schema.salesOrders.customerId, schema.customers.id))
   .orderBy(desc(schema.invoices.createdAt));
 
-  if (customerId) {
-    q = db.select({
-      id: schema.invoices.id,
-      orderId: schema.invoices.orderId,
-      invoiceNumber: schema.invoices.invoiceNumber,
-      invoiceDate: schema.invoices.invoiceDate,
-      amount: schema.invoices.amount,
-      dueDate: schema.invoices.dueDate,
-      status: schema.invoices.status,
-      invoicePdfUrl: schema.invoices.invoicePdfUrl,
-      createdBy: schema.invoices.createdBy,
-      createdAt: schema.invoices.createdAt,
-      orderNumber: schema.salesOrders.orderNumber,
-      companyName: schema.customers.companyName
-    })
-    .from(schema.invoices)
-    .innerJoin(schema.salesOrders, eq(schema.invoices.orderId, schema.salesOrders.id))
-    .innerJoin(schema.customers, eq(schema.salesOrders.customerId, schema.customers.id))
-    .where(eq(schema.salesOrders.customerId, customerId))
-    .orderBy(desc(schema.invoices.createdAt)) as any;
+  let filterConditions = [];
+  if (session) {
+    if (session.role === 'CLIENT_BRANCH_USER') {
+      filterConditions.push(eq(schema.salesOrders.customerId, session.customerId || ''));
+      filterConditions.push(eq(schema.salesOrders.branchId, session.branchId || ''));
+    } else if (session.role === 'CLIENT_ADMIN') {
+      filterConditions.push(eq(schema.salesOrders.customerId, session.customerId || ''));
+    } else if (customerId) {
+      filterConditions.push(eq(schema.salesOrders.customerId, customerId));
+    }
+  } else if (customerId) {
+    filterConditions.push(eq(schema.salesOrders.customerId, customerId));
+  }
+
+  if (filterConditions.length > 0) {
+    q = q.where(and(...filterConditions)) as any;
   }
 
   const res = await q;
@@ -1086,6 +1228,9 @@ async function db_createInvoice(
 // PAYMENT REFERENCE SYSTEM (EXTERNAL UTR VERIFICATION)
 // =============================================================================
 async function db_getPaymentReferences(customerId?: string): Promise<PaymentReference[]> {
+  const { getSession } = await import('./session');
+  const session = await getSession();
+
   let q = db.select({
     id: schema.paymentReferences.id,
     customerId: schema.paymentReferences.customerId,
@@ -1110,31 +1255,21 @@ async function db_getPaymentReferences(customerId?: string): Promise<PaymentRefe
   .leftJoin(schema.invoices, eq(schema.paymentReferences.invoiceId, schema.invoices.id))
   .orderBy(desc(schema.paymentReferences.createdAt));
 
-  if (customerId) {
-    q = db.select({
-      id: schema.paymentReferences.id,
-      customerId: schema.paymentReferences.customerId,
-      invoiceId: schema.paymentReferences.invoiceId,
-      paymentDate: schema.paymentReferences.paymentDate,
-      amount: schema.paymentReferences.amount,
-      paymentMode: schema.paymentReferences.paymentMode,
-      referenceNumber: schema.paymentReferences.referenceNumber,
-      utrNumber: schema.paymentReferences.utrNumber,
-      notes: schema.paymentReferences.notes,
-      attachmentUrl: schema.paymentReferences.attachmentUrl,
-      status: schema.paymentReferences.status,
-      verifiedBy: schema.paymentReferences.verifiedBy,
-      verifiedAt: schema.paymentReferences.verifiedAt,
-      rejectionReason: schema.paymentReferences.rejectionReason,
-      createdAt: schema.paymentReferences.createdAt,
-      companyName: schema.customers.companyName,
-      invoiceNumber: schema.invoices.invoiceNumber
-    })
-    .from(schema.paymentReferences)
-    .innerJoin(schema.customers, eq(schema.paymentReferences.customerId, schema.customers.id))
-    .leftJoin(schema.invoices, eq(schema.paymentReferences.invoiceId, schema.invoices.id))
-    .where(eq(schema.paymentReferences.customerId, customerId))
-    .orderBy(desc(schema.paymentReferences.createdAt)) as any;
+  let filterConditions = [];
+  if (session) {
+    if (session.role === 'CLIENT_BRANCH_USER') {
+      filterConditions.push(eq(schema.paymentReferences.customerId, session.customerId || ''));
+    } else if (session.role === 'CLIENT_ADMIN') {
+      filterConditions.push(eq(schema.paymentReferences.customerId, session.customerId || ''));
+    } else if (customerId) {
+      filterConditions.push(eq(schema.paymentReferences.customerId, customerId));
+    }
+  } else if (customerId) {
+    filterConditions.push(eq(schema.paymentReferences.customerId, customerId));
+  }
+
+  if (filterConditions.length > 0) {
+    q = q.where(and(...filterConditions)) as any;
   }
 
   const res = await q;
@@ -1306,6 +1441,17 @@ async function db_rejectPaymentReference(
 // CUSTOMER LEDGER COMPILED VIEW
 // =============================================================================
 async function db_getCustomerLedger(customerId: string): Promise<CustomerLedgerEntry[]> {
+  const { getSession } = await import('./session');
+  const session = await getSession();
+
+  if (session) {
+    if (session.role === 'CLIENT_BRANCH_USER') {
+      return [];
+    } else if (session.role === 'CLIENT_ADMIN') {
+      customerId = session.customerId || customerId;
+    }
+  }
+
   const res = await db.select()
     .from(schema.customerLedger)
     .where(eq(schema.customerLedger.customerId, customerId))
@@ -1698,6 +1844,9 @@ async function db_convertCustomItemToSKU(
 // RETURNS / REVERSE LOGISTICS
 // =============================================================================
 async function db_getReturnRequests(customerId?: string): Promise<any[]> {
+  const { getSession } = await import('./session');
+  const session = await getSession();
+
   let q = db.select({
     id: schema.returnRequests.id,
     returnNumber: schema.returnRequests.returnNumber,
@@ -1719,28 +1868,22 @@ async function db_getReturnRequests(customerId?: string): Promise<any[]> {
   .leftJoin(schema.customerBranches, eq(schema.returnRequests.branchId, schema.customerBranches.id))
   .orderBy(desc(schema.returnRequests.createdAt));
 
-  if (customerId) {
-    q = db.select({
-      id: schema.returnRequests.id,
-      returnNumber: schema.returnRequests.returnNumber,
-      customerId: schema.returnRequests.customerId,
-      branchId: schema.returnRequests.branchId,
-      orderId: schema.returnRequests.orderId,
-      invoiceNumber: schema.returnRequests.invoiceNumber,
-      status: schema.returnRequests.status,
-      reason: schema.returnRequests.reason,
-      remarks: schema.returnRequests.remarks,
-      createdByType: schema.returnRequests.createdByType,
-      createdBy: schema.returnRequests.createdBy,
-      createdAt: schema.returnRequests.createdAt,
-      companyName: schema.customers.companyName,
-      branchName: schema.customerBranches.branchName
-    })
-    .from(schema.returnRequests)
-    .innerJoin(schema.customers, eq(schema.returnRequests.customerId, schema.customers.id))
-    .leftJoin(schema.customerBranches, eq(schema.returnRequests.branchId, schema.customerBranches.id))
-    .where(eq(schema.returnRequests.customerId, customerId))
-    .orderBy(desc(schema.returnRequests.createdAt)) as any;
+  let filterConditions = [];
+  if (session) {
+    if (session.role === 'CLIENT_BRANCH_USER') {
+      filterConditions.push(eq(schema.returnRequests.customerId, session.customerId || ''));
+      filterConditions.push(eq(schema.returnRequests.branchId, session.branchId || ''));
+    } else if (session.role === 'CLIENT_ADMIN') {
+      filterConditions.push(eq(schema.returnRequests.customerId, session.customerId || ''));
+    } else if (customerId) {
+      filterConditions.push(eq(schema.returnRequests.customerId, customerId));
+    }
+  } else if (customerId) {
+    filterConditions.push(eq(schema.returnRequests.customerId, customerId));
+  }
+
+  if (filterConditions.length > 0) {
+    q = q.where(and(...filterConditions)) as any;
   }
 
   const res = await q;
@@ -1761,7 +1904,11 @@ async function db_getReturnRequests(customerId?: string): Promise<any[]> {
     .leftJoin(schema.products, eq(schema.productVariants.productId, schema.products.id))
     .where(eq(schema.returnRequestItems.returnRequestId, r.id));
 
-    const attachments = await db.select().from(schema.returnAttachments).where(eq(schema.returnAttachments.returnRequestId, r.id));
+    const legacyAttachments = await db.select().from(schema.returnAttachments).where(eq(schema.returnAttachments.returnRequestId, r.id));
+    const newImages = await db.select().from(schema.returnClaimImages).where(eq(schema.returnClaimImages.returnId, r.id));
+    const allPhotos = [...legacyAttachments.map(a => a.fileUrl), ...newImages.map(img => img.imageUrl)];
+    const uniquePhotos = Array.from(new Set(allPhotos));
+
     const resolutions = await db.select().from(schema.returnResolutions).where(eq(schema.returnResolutions.returnRequestId, r.id)).limit(1);
 
     const orderObj = r.orderId ? await db.select().from(schema.salesOrders).where(eq(schema.salesOrders.id, r.orderId)).limit(1) : [];
@@ -1792,7 +1939,14 @@ async function db_getReturnRequests(customerId?: string): Promise<any[]> {
         sku: i.sku || undefined,
         productName: i.productName || i.customItemName || undefined
       })),
-      attachments: attachments.map(a => a.fileUrl),
+      attachments: uniquePhotos,
+      photos: uniquePhotos,
+      images: newImages.map(img => ({
+        id: img.id,
+        imageUrl: img.imageUrl,
+        uploadedBy: img.uploadedBy,
+        uploadedAt: img.uploadedAt ? img.uploadedAt.toISOString() : undefined
+      })),
       resolution: resolutions.length > 0 ? {
         id: resolutions[0].id,
         returnRequestId: resolutions[0].returnRequestId,
@@ -1808,6 +1962,7 @@ async function db_getReturnRequests(customerId?: string): Promise<any[]> {
 }
 
 async function db_createReturnRequest(data: {
+  id?: string;
   customerId: string;
   branchId?: string;
   orderId?: string;
@@ -1824,6 +1979,7 @@ async function db_createReturnRequest(data: {
   const returnNumber = `RET-${String(count).padStart(6, '0')}`;
 
   const res = await db.insert(schema.returnRequests).values({
+    id: data.id || undefined,
     returnNumber,
     customerId: data.customerId,
     branchId: data.branchId || null,
@@ -1852,6 +2008,12 @@ async function db_createReturnRequest(data: {
       await db.insert(schema.returnAttachments).values({
         returnRequestId: r.id,
         fileUrl: photo
+      });
+
+      await db.insert(schema.returnClaimImages).values({
+        returnId: r.id,
+        imageUrl: photo,
+        uploadedBy: data.createdBy
       });
     }
   }
@@ -2056,6 +2218,18 @@ async function db_getB2BBranchReporting(): Promise<any> {
     customerReporting,
     branchReporting
   };
+}
+
+async function db_getRoles() {
+  return db.select().from(schema.roles);
+}
+
+async function db_getPermissions() {
+  return db.select().from(schema.permissions);
+}
+
+async function db_getRolePermissions() {
+  return db.select().from(schema.rolePermissions);
 }
 
 // =============================================================================
@@ -2380,5 +2554,53 @@ export async function logB2BAuditDetailed(...args: any[]) {
     return (jsonDb.logB2BAuditDetailed as any)(...args);
   }
   return (db_logB2BAuditDetailed as any)(...args);
+}
+
+export async function getBranchUsers(...args: any[]) {
+  if (!db) {
+    const { jsonDb } = await import('./jsonDb');
+    return (jsonDb.getBranchUsers as any)(...args);
+  }
+  return (db_getBranchUsers as any)(...args);
+}
+
+export async function createBranchUser(...args: any[]) {
+  if (!db) {
+    const { jsonDb } = await import('./jsonDb');
+    return (jsonDb.createBranchUser as any)(...args);
+  }
+  return (db_createBranchUser as any)(...args);
+}
+
+export async function updateBranchUser(...args: any[]) {
+  if (!db) {
+    const { jsonDb } = await import('./jsonDb');
+    return (jsonDb.updateBranchUser as any)(...args);
+  }
+  return (db_updateBranchUser as any)(...args);
+}
+
+export async function getRoles(...args: any[]) {
+  if (!db) {
+    const { jsonDb } = await import('./jsonDb');
+    return (jsonDb.getRoles as any)(...args);
+  }
+  return (db_getRoles as any)(...args);
+}
+
+export async function getPermissions(...args: any[]) {
+  if (!db) {
+    const { jsonDb } = await import('./jsonDb');
+    return (jsonDb.getPermissions as any)(...args);
+  }
+  return (db_getPermissions as any)(...args);
+}
+
+export async function getRolePermissions(...args: any[]) {
+  if (!db) {
+    const { jsonDb } = await import('./jsonDb');
+    return (jsonDb.getRolePermissions as any)(...args);
+  }
+  return (db_getRolePermissions as any)(...args);
 }
 

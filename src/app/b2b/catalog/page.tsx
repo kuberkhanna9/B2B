@@ -8,7 +8,7 @@ export const revalidate = 0;
 
 export default async function CatalogPage() {
   const user = await getSession();
-  if (!user || user.role !== 'B2B_CUSTOMER' || !user.customerId) {
+  if (!user || (user.role !== 'CLIENT_ADMIN' && user.role !== 'CLIENT_BRANCH_USER') || !user.customerId) {
     redirect('/login');
   }
 
@@ -41,7 +41,7 @@ export default async function CatalogPage() {
         {/* Header */}
         <div className="pb-6 border-b border-slate-200 mb-8">
           <h1 className="text-2xl font-black text-slate-900 tracking-tight">Product Catalogue</h1>
-          <p className="text-slate-500 text-xs mt-1">Select products and quantities. Available Stock reflects live ledger balances minus other approved customer reservations.</p>
+          <p className="text-slate-500 text-xs mt-1">Select products and quantities to place your wholesale orders directly below.</p>
         </div>
 
         {/* Client side interactive catalog grid, filters, and shopping cart */}

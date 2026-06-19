@@ -26,7 +26,7 @@ export default async function AdminDashboardPage() {
   }
 
   // Redirect B2B Customer users to their dedicated portal path
-  if (user.role === 'B2B_CUSTOMER') {
+  if (user.role === 'CLIENT_ADMIN' || user.role === 'CLIENT_BRANCH_USER') {
     redirect('/b2b');
   }
 
