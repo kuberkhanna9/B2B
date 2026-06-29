@@ -71,6 +71,9 @@ export const returnTypeEnum = pgEnum('return_type', [
   'CUSTOMER_CANCELLATION'
 ]);
 
+export const customerStatusEnum = pgEnum('customer_status', ['ACTIVE', 'INACTIVE']);
+export const dispatchStatusEnum = pgEnum('dispatch_status', ['PENDING', 'DISPATCHED', 'DELIVERED', 'CANCELLED']);
+
 // 1. PROFILES Table
 export const profiles = pgTable('profiles', {
   id: uuid('id').primaryKey(), // maps to auth.users.id
@@ -167,18 +170,20 @@ export const priceHistory = pgTable('price_history', {
 });
 
 // 9. AUDIT_LOGS Table
-export const auditLogs = pgTable('audit_logs', {
+export const auditLogs = pgTable('b2b_audit_logs', {
   id: uuid('id').defaultRandom().primaryKey(),
   userId: uuid('user_id').references(() => profiles.id, { onDelete: 'set null' }),
   username: varchar('username', { length: 100 }),
   role: varchar('role', { length: 100 }),
   entity: varchar('entity', { length: 100 }),
+  entityId: uuid('entity_id'),
   action: varchar('action', { length: 255 }).notNull(),
   module: varchar('module', { length: 100 }).notNull(),
   description: varchar('description', { length: 1000 }).notNull(),
   oldValue: text('old_value'),
   newValue: text('new_value'),
   ipAddress: varchar('ip_address', { length: 50 }),
+  userAgent: varchar('user_agent', { length: 255 }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
@@ -187,14 +192,15 @@ export const auditLogs = pgTable('audit_logs', {
 // NEW B2B CUSTOMER PORTAL TABLES
 // =============================================================================
 
-// 10. CUSTOMERS Table
-export const customers = pgTable('customers', {
+// 10. COMPANIES Table (Mapped to customers in codebase)
+export const customers = pgTable('companies', {
   id: uuid('id').defaultRandom().primaryKey(),
   companyName: varchar('company_name', { length: 255 }).notNull(),
   phone: varchar('phone', { length: 50 }),
   email: varchar('email', { length: 255 }),
   billingAddress: varchar('billing_address', { length: 1000 }),
   shippingAddress: varchar('shipping_address', { length: 1000 }),
+  status: customerStatusEnum('status').default('ACTIVE').notNull(),
   active: boolean('active').default(true).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
@@ -202,7 +208,8 @@ export const customers = pgTable('customers', {
 // 11. CUSTOMER_USERS Table
 export const customerUsers = pgTable('customer_users', {
   id: uuid('id').defaultRandom().primaryKey(),
-  customerId: uuid('customer_id').references(() => customers.id, { onDelete: 'cascade' }).notNull(),
+  customerId: uuid('company_id').references(() => customers.id, { onDelete: 'cascade' }).notNull(),
+  branchId: uuid('branch_id').references(() => customerBranches.id, { onDelete: 'cascade' }),
   username: varchar('username', { length: 100 }).unique().notNull(),
   passwordHash: varchar('password_hash', { length: 255 }).notNull(),
   fullName: varchar('full_name', { length: 255 }).notNull(),
@@ -211,10 +218,10 @@ export const customerUsers = pgTable('customer_users', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
-// 12. CUSTOMER_PRICING Table
-export const customerPricing = pgTable('customer_pricing', {
+// 12. CUSTOMER_PRICING Table (Mapped to customer_price_overrides in database)
+export const customerPricing = pgTable('customer_price_overrides', {
   id: uuid('id').defaultRandom().primaryKey(),
-  customerId: uuid('customer_id').references(() => customers.id, { onDelete: 'cascade' }).notNull(),
+  customerId: uuid('company_id').references(() => customers.id, { onDelete: 'cascade' }).notNull(),
   variantId: uuid('variant_id').references(() => productVariants.id, { onDelete: 'cascade' }).notNull(),
   customPrice: numeric('custom_price', { precision: 12, scale: 2 }).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
@@ -223,7 +230,7 @@ export const customerPricing = pgTable('customer_pricing', {
 // 21. CUSTOMER_BRANCHES Table
 export const customerBranches = pgTable('customer_branches', {
   id: uuid('id').defaultRandom().primaryKey(),
-  customerId: uuid('customer_id').references(() => customers.id, { onDelete: 'cascade' }).notNull(),
+  customerId: uuid('company_id').references(() => customers.id, { onDelete: 'cascade' }).notNull(),
   branchName: varchar('branch_name', { length: 255 }).notNull(),
   branchCode: varchar('branch_code', { length: 50 }).notNull(),
   contactPerson: varchar('contact_person', { length: 255 }),
@@ -246,10 +253,10 @@ export const orderSources = pgTable('order_sources', {
 export const salesOrders = pgTable('sales_orders', {
   id: uuid('id').defaultRandom().primaryKey(),
   orderNumber: varchar('order_number', { length: 100 }).unique().notNull(),
-  customerId: uuid('customer_id').references(() => customers.id, { onDelete: 'restrict' }).notNull(),
+  customerId: uuid('company_id').references(() => customers.id, { onDelete: 'restrict' }).notNull(), // Map to company_id in DB
   branchId: uuid('branch_id').references(() => customerBranches.id, { onDelete: 'restrict' }),
   sourceId: varchar('source_id', { length: 100 }).references(() => orderSources.id, { onDelete: 'restrict' }),
-  createdBy: uuid('created_by').notNull(), // customerUsers.id (or profiles.id if manual admin)
+  createdBy: uuid('created_by').notNull(),
   status: orderStatusEnum('status').default('PENDING_APPROVAL').notNull(),
   totalAmount: numeric('total_amount', { precision: 12, scale: 2 }).notNull(),
   remarks: varchar('remarks', { length: 500 }),
@@ -279,6 +286,7 @@ export const dispatches = pgTable('dispatches', {
   courier: varchar('courier', { length: 255 }).notNull(),
   trackingNumber: varchar('tracking_number', { length: 255 }).notNull(),
   dispatchDate: timestamp('dispatch_date').notNull(),
+  status: dispatchStatusEnum('status').default('PENDING').notNull(),
   remarks: varchar('remarks', { length: 500 }),
   createdBy: uuid('created_by').references(() => profiles.id).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
@@ -293,8 +301,8 @@ export const dispatchItems = pgTable('dispatch_items', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
-// 17. INVOICES Table
-export const invoices = pgTable('invoices', {
+// 17. INVOICES Table (Mapped to invoice_metadata in database)
+export const invoices = pgTable('invoice_metadata', {
   id: uuid('id').defaultRandom().primaryKey(),
   orderId: uuid('order_id').references(() => salesOrders.id, { onDelete: 'restrict' }).notNull(),
   invoiceNumber: varchar('invoice_number', { length: 100 }).unique().notNull(),
@@ -310,8 +318,8 @@ export const invoices = pgTable('invoices', {
 // 18. PAYMENT_REFERENCES Table
 export const paymentReferences = pgTable('payment_references', {
   id: uuid('id').defaultRandom().primaryKey(),
-  customerId: uuid('customer_id').references(() => customers.id, { onDelete: 'restrict' }).notNull(),
-  invoiceId: uuid('invoice_id').references(() => invoices.id, { onDelete: 'restrict' }),
+  customerId: uuid('company_id').references(() => customers.id, { onDelete: 'restrict' }).notNull(), // Map to company_id column
+  invoiceId: uuid('invoice_id').references(() => invoices.id, { onDelete: 'restrict' }), // Map to invoice_id column
   paymentDate: timestamp('payment_date').notNull(),
   amount: numeric('amount', { precision: 12, scale: 2 }).notNull(),
   paymentMode: paymentModeEnum('payment_mode').notNull(),
@@ -329,7 +337,7 @@ export const paymentReferences = pgTable('payment_references', {
 // 19. CUSTOMER_LEDGER Table
 export const customerLedger = pgTable('customer_ledger', {
   id: uuid('id').defaultRandom().primaryKey(),
-  customerId: uuid('customer_id').references(() => customers.id, { onDelete: 'restrict' }).notNull(),
+  customerId: uuid('company_id').references(() => customers.id, { onDelete: 'restrict' }).notNull(), // Map to company_id column
   date: timestamp('date').notNull(),
   referenceType: ledgerReferenceTypeEnum('reference_type').notNull(),
   referenceId: uuid('reference_id').notNull(),
@@ -340,10 +348,10 @@ export const customerLedger = pgTable('customer_ledger', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
-// 20. NOTIFICATIONS Table
-export const notifications = pgTable('notifications', {
+// 20. NOTIFICATIONS Table (Mapped to customer_notifications in database)
+export const notifications = pgTable('customer_notifications', {
   id: uuid('id').defaultRandom().primaryKey(),
-  customerId: uuid('customer_id').references(() => customers.id, { onDelete: 'cascade' }).notNull(),
+  customerId: uuid('company_id').references(() => customers.id, { onDelete: 'cascade' }).notNull(), // Map to company_id column
   message: varchar('message', { length: 1000 }).notNull(),
   read: boolean('read').default(false).notNull(),
   type: varchar('type', { length: 100 }).notNull(),
@@ -367,26 +375,26 @@ export const customOrderItems = pgTable('custom_order_items', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
-// 24. RETURN_REQUESTS Table
-export const returnRequests = pgTable('return_requests', {
+// 24. RETURN_REQUESTS Table (Mapped to returns in database)
+export const returnRequests = pgTable('returns', {
   id: uuid('id').defaultRandom().primaryKey(),
   returnNumber: varchar('return_number', { length: 100 }).unique().notNull(),
-  customerId: uuid('customer_id').references(() => customers.id, { onDelete: 'restrict' }).notNull(),
+  customerId: uuid('company_id').references(() => customers.id, { onDelete: 'restrict' }).notNull(), // Map to company_id column
   branchId: uuid('branch_id').references(() => customerBranches.id, { onDelete: 'restrict' }),
   orderId: uuid('order_id').references(() => salesOrders.id, { onDelete: 'set null' }),
   invoiceNumber: varchar('invoice_number', { length: 100 }),
   status: returnStatusEnum('status').default('PENDING').notNull(),
   reason: returnTypeEnum('reason').notNull(),
   remarks: varchar('remarks', { length: 1000 }),
-  createdByType: varchar('created_by_type', { length: 50 }).notNull(), // 'CUSTOMER' or 'ADMIN'
+  createdByType: varchar('created_by_type', { length: 50 }).notNull(),
   createdBy: uuid('created_by').notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
-// 25. RETURN_REQUEST_ITEMS Table
-export const returnRequestItems = pgTable('return_request_items', {
+// 25. RETURN_REQUEST_ITEMS Table (Mapped to return_items in database)
+export const returnRequestItems = pgTable('return_items', {
   id: uuid('id').defaultRandom().primaryKey(),
-  returnRequestId: uuid('return_request_id').references(() => returnRequests.id, { onDelete: 'cascade' }).notNull(),
+  returnRequestId: uuid('return_id').references(() => returnRequests.id, { onDelete: 'cascade' }).notNull(), // Map to return_id
   variantId: uuid('variant_id').references(() => productVariants.id, { onDelete: 'restrict' }),
   customItemName: varchar('custom_item_name', { length: 255 }),
   quantity: integer('quantity').notNull(),
@@ -395,24 +403,27 @@ export const returnRequestItems = pgTable('return_request_items', {
 // 26. RETURN_ATTACHMENTS Table
 export const returnAttachments = pgTable('return_attachments', {
   id: uuid('id').defaultRandom().primaryKey(),
-  returnRequestId: uuid('return_request_id').references(() => returnRequests.id, { onDelete: 'cascade' }).notNull(),
+  returnRequestId: uuid('return_id').references(() => returnRequests.id, { onDelete: 'cascade' }).notNull(), // Map to return_id
   fileUrl: varchar('file_url', { length: 1000 }).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
-// 26b. RETURN_CLAIM_IMAGES Table
-export const returnClaimImages = pgTable('return_claim_images', {
+// 26b. RETURN_CLAIM_IMAGES Table (Mapped to claims in database)
+export const returnClaimImages = pgTable('claims', {
   id: uuid('id').defaultRandom().primaryKey(),
-  returnId: uuid('return_id').references(() => returnRequests.id, { onDelete: 'cascade' }).notNull(),
+  returnId: uuid('return_id').references(() => returnRequests.id, { onDelete: 'cascade' }).notNull(), // Map to return_id
   imageUrl: varchar('image_url', { length: 1000 }).notNull(),
+  claimTitle: varchar('claim_title', { length: 255 }),
+  description: varchar('description', { length: 1000 }),
+  status: varchar('status', { length: 50 }).default('PENDING'),
   uploadedBy: uuid('uploaded_by'),
   uploadedAt: timestamp('uploaded_at').defaultNow().notNull(),
 });
 
-// 26c. RETURN_CLAIM_ATTACHMENTS Table
-export const returnClaimAttachments = pgTable('return_claim_attachments', {
+// 26c. RETURN_CLAIM_ATTACHMENTS Table (Mapped to claim_attachments in database)
+export const returnClaimAttachments = pgTable('claim_attachments', {
   id: uuid('id').defaultRandom().primaryKey(),
-  returnId: uuid('return_id').references(() => returnRequests.id, { onDelete: 'cascade' }).notNull(),
+  returnId: uuid('return_id').references(() => returnRequests.id, { onDelete: 'cascade' }).notNull(), // Map to return_id
   fileUrl: varchar('file_url', { length: 1000 }).notNull(),
   fileName: varchar('file_name', { length: 255 }).notNull(),
   fileType: varchar('file_type', { length: 100 }).notNull(),
@@ -423,8 +434,8 @@ export const returnClaimAttachments = pgTable('return_claim_attachments', {
 // 27. RETURN_RESOLUTIONS Table
 export const returnResolutions = pgTable('return_resolutions', {
   id: uuid('id').defaultRandom().primaryKey(),
-  returnRequestId: uuid('return_request_id').references(() => returnRequests.id, { onDelete: 'cascade' }).notNull(),
-  resolutionType: varchar('resolution_type', { length: 100 }).notNull(), // Replace, Credit Note, Refund, Repair, Reject Claim
+  returnRequestId: uuid('return_id').references(() => returnRequests.id, { onDelete: 'cascade' }).notNull(), // Map to return_id
+  resolutionType: varchar('resolution_type', { length: 100 }).notNull(),
   remarks: varchar('remarks', { length: 1000 }),
   resolvedBy: uuid('resolved_by').references(() => profiles.id, { onDelete: 'restrict' }).notNull(),
   resolvedAt: timestamp('resolved_at').defaultNow().notNull(),
@@ -735,9 +746,18 @@ export const userRoles = pgTable('user_roles', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
-export const branchUsers = pgTable('branch_users', {
+export const orderActivityLogs = pgTable('order_activity_logs', {
   id: uuid('id').defaultRandom().primaryKey(),
-  customerId: uuid('customer_id').references(() => customers.id, { onDelete: 'cascade' }).notNull(),
+  orderId: uuid('order_id').references(() => salesOrders.id, { onDelete: 'cascade' }).notNull(),
+  action: varchar('action', { length: 255 }).notNull(),
+  remarks: varchar('remarks', { length: 1000 }),
+  createdBy: uuid('created_by'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+export const branchUsers = pgTable('customer_users', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  customerId: uuid('company_id').references(() => customers.id, { onDelete: 'cascade' }).notNull(),
   branchId: uuid('branch_id').references(() => customerBranches.id, { onDelete: 'cascade' }).notNull(),
   username: varchar('username', { length: 100 }).unique().notNull(),
   passwordHash: varchar('password_hash', { length: 255 }).notNull(),
