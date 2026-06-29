@@ -10,10 +10,16 @@ if (!connectionString && process.env.POSTGRES_URL) {
 
 const isBuilding = process.env.NEXT_PHASE === 'phase-production-build' || process.env.NEXT_PHASE === 'phase-export' || process.env.NEXT_PHASE?.includes('build');
 
-if (!connectionString && !isBuilding) {
-  console.warn("WARNING: DATABASE_URL environment variable is missing. Running in OFFLINE local JSON mock database mode.");
+if (!connectionString) {
+  if (isBuilding) {
+    console.warn("DATABASE_URL is missing during build phase. Standard compilation bypass is active.");
+  } else {
+    throw new Error(
+      "CRITICAL: DATABASE_URL environment variable is missing! LJK B2B Wholesale Portal requires a valid Supabase PostgreSQL connection string to start."
+    );
+  }
 }
 
-const client = (isBuilding || !connectionString) ? null : postgres(connectionString, { prepare: false });
+const client = (isBuilding && !connectionString) ? null : postgres(connectionString!, { prepare: false });
 
-export const db = client ? drizzle(client, { schema }) : null;
+export const db = (client ? drizzle(client, { schema }) : null) as ReturnType<typeof drizzle<typeof schema>> | null;

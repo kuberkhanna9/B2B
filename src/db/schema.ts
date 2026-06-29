@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, boolean, timestamp, integer, numeric, pgEnum, text } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, boolean, timestamp, integer, numeric, pgEnum, text, pgView } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
 
@@ -65,7 +65,10 @@ export const returnTypeEnum = pgEnum('return_type', [
   'CUSTOMER_REJECTION',
   'TRANSIT_DAMAGE',
   'SIZE_ISSUE',
-  'OTHER'
+  'OTHER',
+  'COLOUR_ISSUE',
+  'SHORT_QUANTITY',
+  'CUSTOMER_CANCELLATION'
 ]);
 
 // 1. PROFILES Table
@@ -406,6 +409,17 @@ export const returnClaimImages = pgTable('return_claim_images', {
   uploadedAt: timestamp('uploaded_at').defaultNow().notNull(),
 });
 
+// 26c. RETURN_CLAIM_ATTACHMENTS Table
+export const returnClaimAttachments = pgTable('return_claim_attachments', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  returnId: uuid('return_id').references(() => returnRequests.id, { onDelete: 'cascade' }).notNull(),
+  fileUrl: varchar('file_url', { length: 1000 }).notNull(),
+  fileName: varchar('file_name', { length: 255 }).notNull(),
+  fileType: varchar('file_type', { length: 100 }).notNull(),
+  uploadedBy: uuid('uploaded_by'),
+  uploadedAt: timestamp('uploaded_at').defaultNow().notNull(),
+});
+
 // 27. RETURN_RESOLUTIONS Table
 export const returnResolutions = pgTable('return_resolutions', {
   id: uuid('id').defaultRandom().primaryKey(),
@@ -642,6 +656,7 @@ export const returnRequestsRelations = relations(returnRequests, ({ one, many })
   items: many(returnRequestItems),
   attachments: many(returnAttachments),
   images: many(returnClaimImages),
+  claimAttachments: many(returnClaimAttachments),
   resolutions: many(returnResolutions),
 }));
 
@@ -666,6 +681,13 @@ export const returnAttachmentsRelations = relations(returnAttachments, ({ one })
 export const returnClaimImagesRelations = relations(returnClaimImages, ({ one }) => ({
   returnRequest: one(returnRequests, {
     fields: [returnClaimImages.returnId],
+    references: [returnRequests.id],
+  }),
+}));
+
+export const returnClaimAttachmentsRelations = relations(returnClaimAttachments, ({ one }) => ({
+  returnRequest: one(returnRequests, {
+    fields: [returnClaimAttachments.returnId],
     references: [returnRequests.id],
   }),
 }));
@@ -762,4 +784,12 @@ export const branchUsersRelations = relations(branchUsers, ({ one }) => ({
     references: [customerBranches.id],
   }),
 }));
+
+export const inventoryAvailability = pgTable('inventory_availability', {
+  variantId: uuid('variant_id').primaryKey(),
+  sku: varchar('sku', { length: 100 }).notNull(),
+  physicalStock: integer('physical_stock').notNull(),
+  reservedStock: integer('reserved_stock').notNull(),
+  availableStock: integer('available_stock').notNull(),
+});
 

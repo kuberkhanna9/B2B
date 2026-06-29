@@ -22,12 +22,30 @@ interface ReturnsAdminClientProps {
   userRole: string;
 }
 
+const mapReasonLabel = (reasonCode: string) => {
+  switch (reasonCode) {
+    case 'DEFECTIVE': return 'Defective Piece';
+    case 'WRONG_ITEM': return 'Wrong Item Received';
+    case 'SIZE_ISSUE': return 'Size Issue';
+    case 'COLOUR_ISSUE': return 'Colour Issue';
+    case 'EXCESS_QUANTITY': return 'Excess Quantity Received';
+    case 'SHORT_QUANTITY': return 'Short Quantity Received';
+    case 'SOR_RETURN': return 'SOR Return';
+    case 'TRANSIT_DAMAGE': return 'Transit Damage';
+    case 'CUSTOMER_CANCELLATION': return 'Customer Cancellation';
+    case 'CUSTOMER_REJECTION': return 'Customer Rejection'; // legacy support
+    case 'OTHER': return 'Other';
+    default: return reasonCode ? reasonCode.replace('_', ' ') : '';
+  }
+};
+
 export default function ReturnsAdminClient({ returnRequests, userRole }: ReturnsAdminClientProps) {
   const [selectedRequest, setSelectedRequest] = useState<any | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
 
   // Lightbox Zoom Preview
   const [activePhotoUrl, setActivePhotoUrl] = useState<string | null>(null);
+  const [activePhotoType, setActivePhotoType] = useState<string | null>(null);
   const [zoomScale, setZoomScale] = useState(1);
 
   // Form Fields
@@ -43,6 +61,18 @@ export default function ReturnsAdminClient({ returnRequests, userRole }: Returns
     if (statusFilter === 'ALL') return true;
     return req.status === statusFilter;
   });
+
+  const legacyPhotos = selectedRequest?.photos || [];
+  const attachmentsList = selectedRequest?.claimAttachments || [];
+  let normalizedAttachments: any[] = [...attachmentsList];
+  if (normalizedAttachments.length === 0 && legacyPhotos.length > 0) {
+    normalizedAttachments = legacyPhotos.map((url: string, idx: number) => ({
+      id: `legacy-${idx}`,
+      fileUrl: url,
+      fileName: url.split('/').pop() || 'image.png',
+      fileType: url.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'image/png'
+    }));
+  }
 
   const handleOpenDetails = (req: any) => {
     setSelectedRequest(req);
@@ -146,7 +176,7 @@ export default function ReturnsAdminClient({ returnRequests, userRole }: Returns
                     </td>
                     <td className="px-5 py-3.5 font-extrabold text-slate-700">
                       <span className="bg-slate-100 px-2 py-0.5 rounded text-[9px] uppercase tracking-wide">
-                        {req.reason.replace('_', ' ')}
+                        {mapReasonLabel(req.reason)}
                       </span>
                     </td>
                     <td className="px-5 py-3.5 text-center">
@@ -221,7 +251,7 @@ export default function ReturnsAdminClient({ returnRequests, userRole }: Returns
                     <div>
                       <span className="block text-[8px] font-black text-slate-400 uppercase tracking-wider">Reference Info</span>
                       <span className="block font-semibold text-slate-700 mt-0.5">Invoice: {selectedRequest.invoiceNumber || '—'}</span>
-                      <span className="block text-[9px] text-slate-400 mt-0.5">Reason: {selectedRequest.reason.replace('_', ' ')}</span>
+                      <span className="block text-[9px] text-slate-400 mt-0.5">Reason: {mapReasonLabel(selectedRequest.reason)}</span>
                     </div>
                   </div>
 
@@ -267,24 +297,51 @@ export default function ReturnsAdminClient({ returnRequests, userRole }: Returns
                     </div>
                   </div>
 
-                  {/* Photos */}
-                  {selectedRequest.photos && selectedRequest.photos.length > 0 && (
+                  {/* Evidence Attachments */}
+                  {normalizedAttachments.length > 0 && (
                     <div className="space-y-2">
-                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">Claim Evidence Photos</span>
+                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">Claim Evidence Attachments</span>
                       <div className="flex flex-wrap gap-3">
-                        {selectedRequest.photos.map((pUrl: string, idx: number) => (
-                          <button
-                            key={idx}
-                            type="button"
-                            onClick={() => { setActivePhotoUrl(pUrl); setZoomScale(1); }}
-                            className="w-20 h-20 border border-slate-200 rounded-xl overflow-hidden hover:opacity-80 transition-all flex items-center justify-center bg-slate-50 relative group cursor-pointer"
-                          >
-                            <img src={pUrl} alt="damage-evidence" className="w-full h-full object-cover" />
-                            <div className="absolute inset-0 bg-slate-950/20 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                              <ImageIcon size={14} className="text-white" />
+                        {normalizedAttachments.map((att: any) => {
+                          const isPdf = att.fileType === 'application/pdf' || att.fileUrl.toLowerCase().split('?')[0].endsWith('.pdf');
+                          return (
+                            <div key={att.id} className="relative group border border-slate-200 rounded-2xl overflow-hidden bg-slate-50 flex flex-col items-center justify-center w-28 h-28 p-2">
+                              {isPdf ? (
+                                <div className="flex-1 flex flex-col items-center justify-center text-slate-400 gap-1">
+                                  <FileText size={24} className="text-rose-500" />
+                                  <span className="text-[8px] font-bold text-slate-600 truncate max-w-[90px]" title={att.fileName}>
+                                    {att.fileName}
+                                  </span>
+                                </div>
+                              ) : (
+                                <img src={att.fileUrl} alt={att.fileName} className="w-full h-[65%] object-cover rounded-xl" />
+                              )}
+                              
+                              <div className="w-full flex gap-1 justify-center mt-1">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setActivePhotoUrl(att.fileUrl);
+                                    setActivePhotoType(att.fileType);
+                                    setZoomScale(1);
+                                  }}
+                                  className="bg-white hover:bg-slate-100 text-slate-800 text-[8px] px-1.5 py-0.5 rounded border border-slate-200 font-black cursor-pointer"
+                                >
+                                  View
+                                </button>
+                                <a
+                                  href={att.fileUrl}
+                                  download={att.fileName}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="bg-white hover:bg-slate-100 text-slate-800 text-[8px] px-1.5 py-0.5 rounded border border-slate-200 font-black flex items-center justify-center"
+                                >
+                                  Get
+                                </a>
+                              </div>
                             </div>
-                          </button>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
                   )}
@@ -387,39 +444,53 @@ export default function ReturnsAdminClient({ returnRequests, userRole }: Returns
       {activePhotoUrl && (
         <div className="fixed inset-0 z-[100] bg-slate-950/90 flex flex-col items-center justify-center p-4">
           <div className="absolute top-4 right-4 flex items-center gap-3">
+            {!(activePhotoUrl.toLowerCase().split('?')[0].endsWith('.pdf') || (activePhotoType && activePhotoType.includes('pdf'))) && (
+              <>
+                <button
+                  onClick={() => setZoomScale(prev => Math.min(prev + 0.25, 3))}
+                  className="bg-slate-800/80 hover:bg-slate-700 text-white rounded-xl p-2 px-3 font-bold text-xs cursor-pointer select-none transition-colors border border-slate-700"
+                >
+                  Zoom In
+                </button>
+                <button
+                  onClick={() => setZoomScale(prev => Math.max(prev - 0.25, 0.5))}
+                  className="bg-slate-800/80 hover:bg-slate-700 text-white rounded-xl p-2 px-3 font-bold text-xs cursor-pointer select-none transition-colors border border-slate-700"
+                >
+                  Zoom Out
+                </button>
+              </>
+            )}
             <button
-              onClick={() => setZoomScale(prev => Math.min(prev + 0.25, 3))}
-              className="bg-slate-800/80 hover:bg-slate-700 text-white rounded-xl p-2 px-3 font-bold text-xs cursor-pointer select-none transition-colors border border-slate-700"
-            >
-              Zoom In
-            </button>
-            <button
-              onClick={() => setZoomScale(prev => Math.max(prev - 0.25, 0.5))}
-              className="bg-slate-800/80 hover:bg-slate-700 text-white rounded-xl p-2 px-3 font-bold text-xs cursor-pointer select-none transition-colors border border-slate-700"
-            >
-              Zoom Out
-            </button>
-            <button
-              onClick={() => { setActivePhotoUrl(null); setZoomScale(1); }}
+              onClick={() => { setActivePhotoUrl(null); setActivePhotoType(null); setZoomScale(1); }}
               className="bg-slate-800/80 hover:bg-slate-700 text-white rounded-xl p-2 cursor-pointer transition-colors border border-slate-700"
             >
               <X size={18} />
             </button>
           </div>
           
-          <div className="flex-1 w-full flex items-center justify-center overflow-auto">
-            <img 
-              src={activePhotoUrl} 
-              alt="Evidence Full Size" 
-              style={{ transform: `scale(${zoomScale})` }}
-              className="max-h-[85vh] max-w-full object-contain rounded-lg transition-transform duration-250 ease-out cursor-zoom-in"
-              onClick={() => setZoomScale(prev => prev === 1 ? 2 : 1)}
-            />
+          <div className="flex-1 w-full flex items-center justify-center overflow-auto p-4">
+            {activePhotoUrl.toLowerCase().split('?')[0].endsWith('.pdf') || (activePhotoType && activePhotoType.includes('pdf')) ? (
+              <iframe 
+                src={activePhotoUrl} 
+                className="w-full max-w-5xl h-[85vh] rounded-2xl bg-white border-0 shadow-2xl"
+                title="Document Attachment Preview"
+              />
+            ) : (
+              <img 
+                src={activePhotoUrl} 
+                alt="Evidence Full Size" 
+                style={{ transform: `scale(${zoomScale})` }}
+                className="max-h-[85vh] max-w-full object-contain rounded-lg transition-transform duration-250 ease-out cursor-zoom-in"
+                onClick={() => setZoomScale(prev => prev === 1 ? 2 : 1)}
+              />
+            )}
           </div>
 
-          <div className="text-slate-400 text-[10px] pb-2 font-semibold">
-            Click image to toggle 2x zoom. Scroll or use controls to adjust.
-          </div>
+          {!(activePhotoUrl.toLowerCase().split('?')[0].endsWith('.pdf') || (activePhotoType && activePhotoType.includes('pdf'))) && (
+            <div className="text-slate-400 text-[10px] pb-2 font-semibold">
+              Click image to toggle 2x zoom. Scroll or use controls to adjust.
+            </div>
+          )}
         </div>
       )}
     </div>

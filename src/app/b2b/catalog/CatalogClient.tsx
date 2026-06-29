@@ -305,7 +305,7 @@ export default function CatalogClient({ catalog, categories, colors, sizes, bran
                     <thead>
                       <tr className="bg-slate-100 border-b border-slate-150 text-[8px] font-black uppercase text-slate-450 tracking-wider">
                         <th className="px-3 py-2">Color/Size</th>
-                        <th className="px-3 py-2 text-right">WSP</th>
+                        <th className="px-3 py-2 text-right">Your WSP</th>
                         <th className="px-3 py-2 text-right">MRP</th>
                         <th className="px-3 py-2 text-center">Action</th>
                       </tr>

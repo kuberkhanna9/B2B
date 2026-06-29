@@ -535,10 +535,11 @@ export async function createReturnRequestAction(
     branchId?: string;
     orderId?: string;
     invoiceNumber?: string;
-    reason: 'DEFECTIVE' | 'SOR_RETURN' | 'WRONG_ITEM' | 'EXCESS_QUANTITY' | 'CUSTOMER_REJECTION' | 'TRANSIT_DAMAGE' | 'SIZE_ISSUE' | 'OTHER';
+    reason: 'DEFECTIVE' | 'SOR_RETURN' | 'WRONG_ITEM' | 'EXCESS_QUANTITY' | 'CUSTOMER_REJECTION' | 'TRANSIT_DAMAGE' | 'SIZE_ISSUE' | 'OTHER' | 'COLOUR_ISSUE' | 'SHORT_QUANTITY' | 'CUSTOMER_CANCELLATION';
     remarks?: string;
     items: { variantId?: string; customItemName?: string; quantity: number }[];
     photos?: string[];
+    attachments?: { fileUrl: string; fileName: string; fileType: string }[];
   }
 ): Promise<{ success: boolean; error?: string; message?: string }> {
   const user = await getSession();

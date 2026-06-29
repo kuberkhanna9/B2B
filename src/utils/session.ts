@@ -1,6 +1,7 @@
 import { cookies } from 'next/headers';
 import crypto from 'crypto';
-import { db } from '@/db';
+import { db as rawDb } from '@/db';
+const db = rawDb as NonNullable<typeof rawDb>;
 import { customerUsers } from '@/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { ROLE_PERMISSIONS, PermissionType, RoleType } from './rbac';
@@ -90,39 +91,6 @@ export async function getSession(): Promise<UserSession | null> {
 
   // 2.2 Check Database or Mock JSON
   try {
-    if (!db) {
-      const { jsonDb } = await import('./jsonDb');
-      const users = jsonDb.getCustomerUsers();
-      const u = users.find(user => user.id === sessionVal && user.active);
-      if (u) {
-        return {
-          id: u.id,
-          username: u.username,
-          fullName: u.fullName,
-          role: 'CLIENT_ADMIN',
-          active: u.active,
-          customerId: u.customerId,
-          permissions: ROLE_PERMISSIONS.CLIENT_ADMIN
-        };
-      }
-
-      const bUsers = jsonDb.getBranchUsers();
-      const bu = bUsers.find(user => user.id === sessionVal && user.active);
-      if (bu) {
-        return {
-          id: bu.id,
-          username: bu.username,
-          fullName: bu.fullName,
-          role: 'CLIENT_BRANCH_USER',
-          active: bu.active,
-          customerId: bu.customerId,
-          branchId: bu.branchId,
-          permissions: ROLE_PERMISSIONS.CLIENT_BRANCH_USER
-        };
-      }
-      return null;
-    }
-
     const res = await db.select()
       .from(customerUsers)
       .where(and(eq(customerUsers.id, sessionVal), eq(customerUsers.active, true)))
@@ -202,51 +170,6 @@ export async function authenticateUser(usernameOrEmail: string, password: string
 
   // 2. Client side users (Admin or Branch User)
   try {
-    if (!db) {
-      const { jsonDb } = await import('./jsonDb');
-      
-      // Check Customer User (Client Admin)
-      const cUsers = jsonDb.getCustomerUsers();
-      const cu = cUsers.find(
-        u => (u.email.toLowerCase() === cleanInput.toLowerCase() || u.username.toLowerCase() === cleanInput.toLowerCase()) && u.active
-      );
-      if (cu && cu.passwordHash === inputHash) {
-        const session: UserSession = {
-          id: cu.id,
-          username: cu.username,
-          fullName: cu.fullName,
-          role: 'CLIENT_ADMIN',
-          active: cu.active,
-          customerId: cu.customerId,
-          permissions: ROLE_PERMISSIONS.CLIENT_ADMIN
-        };
-        await writeSessionCookie(session);
-        return session;
-      }
-
-      // Check Branch User (Client Branch User)
-      const bUsers = jsonDb.getBranchUsers();
-      const bu = bUsers.find(
-        u => (u.email.toLowerCase() === cleanInput.toLowerCase() || u.username.toLowerCase() === cleanInput.toLowerCase()) && u.active
-      );
-      if (bu && bu.passwordHash === inputHash) {
-        const session: UserSession = {
-          id: bu.id,
-          username: bu.username,
-          fullName: bu.fullName,
-          role: 'CLIENT_BRANCH_USER',
-          active: bu.active,
-          customerId: bu.customerId,
-          branchId: bu.branchId,
-          permissions: ROLE_PERMISSIONS.CLIENT_BRANCH_USER
-        };
-        await writeSessionCookie(session);
-        return session;
-      }
-
-      return null;
-    }
-
     // Database check - Client Admin
     const resCu = await db.select()
       .from(customerUsers)

@@ -26,6 +26,23 @@ interface ReturnsClientProps {
   customerId: string;
 }
 
+export const mapReasonLabel = (reasonCode: string) => {
+  switch (reasonCode) {
+    case 'DEFECTIVE': return 'Defective Piece';
+    case 'WRONG_ITEM': return 'Wrong Item Received';
+    case 'SIZE_ISSUE': return 'Size Issue';
+    case 'COLOUR_ISSUE': return 'Colour Issue';
+    case 'EXCESS_QUANTITY': return 'Excess Quantity Received';
+    case 'SHORT_QUANTITY': return 'Short Quantity Received';
+    case 'SOR_RETURN': return 'SOR Return';
+    case 'TRANSIT_DAMAGE': return 'Transit Damage';
+    case 'CUSTOMER_CANCELLATION': return 'Customer Cancellation';
+    case 'CUSTOMER_REJECTION': return 'Customer Rejection'; // legacy support
+    case 'OTHER': return 'Other';
+    default: return reasonCode ? reasonCode.replace('_', ' ') : '';
+  }
+};
+
 export default function ReturnsClient({ returns, orders, branches, variants, customerId }: ReturnsClientProps) {
   const [activeTab, setActiveTab] = useState<'history' | 'new'>('history');
 
@@ -40,7 +57,7 @@ export default function ReturnsClient({ returns, orders, branches, variants, cus
   const [orderId, setOrderId] = useState('');
   const [invoiceNumber, setInvoiceNumber] = useState('');
   const [branchId, setBranchId] = useState('');
-  const [reason, setReason] = useState<'DEFECTIVE' | 'SOR_RETURN' | 'WRONG_ITEM' | 'EXCESS_QUANTITY' | 'CUSTOMER_REJECTION' | 'TRANSIT_DAMAGE' | 'SIZE_ISSUE' | 'OTHER'>('DEFECTIVE');
+  const [reason, setReason] = useState<'DEFECTIVE' | 'SOR_RETURN' | 'WRONG_ITEM' | 'EXCESS_QUANTITY' | 'CUSTOMER_REJECTION' | 'TRANSIT_DAMAGE' | 'SIZE_ISSUE' | 'OTHER' | 'COLOUR_ISSUE' | 'SHORT_QUANTITY' | 'CUSTOMER_CANCELLATION'>('DEFECTIVE');
   const [remarks, setRemarks] = useState('');
   
   // Return items list
@@ -49,10 +66,11 @@ export default function ReturnsClient({ returns, orders, branches, variants, cus
   ]);
 
   // Image upload state (Option A files + Option B URLs)
-  const [photoItems, setPhotoItems] = useState<{ url: string; isUrlInput?: boolean; file?: File; isUploading?: boolean; error?: string }[]>([]);
+  const [photoItems, setPhotoItems] = useState<{ url: string; fileName?: string; fileType?: string; isUrlInput?: boolean; file?: File; isUploading?: boolean; error?: string }[]>([]);
 
   // Lightbox Preview
   const [activePreviewUrl, setActivePreviewUrl] = useState<string | null>(null);
+  const [activePreviewType, setActivePreviewType] = useState<string | null>(null);
 
   // Status/Transitions
   const [isPending, startTransition] = useTransition();
@@ -109,7 +127,12 @@ export default function ReturnsClient({ returns, orders, branches, variants, cus
         setPhotoItems(prev => {
           const updated = [...prev];
           if (updated[index]) {
-            updated[index] = { url: result.url, isUploading: false };
+            updated[index] = {
+              url: result.url,
+              fileName: file.name,
+              fileType: file.type,
+              isUploading: false
+            };
           }
           return updated;
         });
@@ -139,19 +162,19 @@ export default function ReturnsClient({ returns, orders, branches, variants, cus
     const filesToUpload = Array.from(files).slice(0, remainingSlots);
 
     if (files.length > remainingSlots) {
-      setStatusMsg({ success: false, message: 'Maximum 10 photos are allowed per return claim.' });
+      setStatusMsg({ success: false, message: 'Maximum 10 files are allowed per return claim.' });
     }
 
     const tempItems = [...photoItems];
-    const startIndex = tempItems.length;
+    const uploadTasks: { file: File; index: number }[] = [];
 
     for (let i = 0; i < filesToUpload.length; i++) {
       const file = filesToUpload[i];
 
       // Validate type
-      const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+      const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'application/pdf'];
       if (!validTypes.includes(file.type)) {
-        setStatusMsg({ success: false, message: `Invalid file type: ${file.name}. Only JPG, PNG, WEBP are accepted.` });
+        setStatusMsg({ success: false, message: `Invalid file type: ${file.name}. Only JPG, PNG, WEBP, and PDF are accepted.` });
         continue;
       }
 
@@ -162,27 +185,29 @@ export default function ReturnsClient({ returns, orders, branches, variants, cus
       }
 
       const tempUrl = URL.createObjectURL(file);
+      const targetIndex = tempItems.length;
       tempItems.push({
         url: tempUrl,
+        fileName: file.name,
+        fileType: file.type,
         file,
         isUploading: true
       });
+      uploadTasks.push({ file, index: targetIndex });
     }
 
-    setPhotoItems([...tempItems]);
+    setPhotoItems(tempItems);
 
     // Perform uploads
-    for (let i = 0; i < filesToUpload.length; i++) {
-      const file = filesToUpload[i];
-      const targetIndex = startIndex + i;
-      uploadSingleFile(file, targetIndex);
+    for (const task of uploadTasks) {
+      uploadSingleFile(task.file, task.index);
     }
   };
 
   const handleReplaceFile = async (idx: number, file: File) => {
-    const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+    const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'application/pdf'];
     if (!validTypes.includes(file.type)) {
-      setStatusMsg({ success: false, message: 'Only JPG, PNG, WEBP are accepted.' });
+      setStatusMsg({ success: false, message: 'Only JPG, PNG, WEBP, and PDF are accepted.' });
       return;
     }
     if (file.size > 10 * 1024 * 1024) {
@@ -191,7 +216,7 @@ export default function ReturnsClient({ returns, orders, branches, variants, cus
     }
 
     const tempUrl = URL.createObjectURL(file);
-    setPhotoItems(prev => prev.map((item, i) => i === idx ? { url: tempUrl, file, isUploading: true } : item));
+    setPhotoItems(prev => prev.map((item, i) => i === idx ? { url: tempUrl, fileName: file.name, fileType: file.type, file, isUploading: true } : item));
 
     uploadSingleFile(file, idx);
   };
@@ -205,6 +230,11 @@ export default function ReturnsClient({ returns, orders, branches, variants, cus
       return;
     }
 
+    if (reason === 'OTHER' && !remarks.trim()) {
+      setStatusMsg({ success: false, message: 'Please enter remarks for reason Other.' });
+      return;
+    }
+
     const validItems = items.filter(item => (item.isCustom && item.customItemName.trim()) || (!item.isCustom && item.variantId));
     if (validItems.length === 0) {
       setStatusMsg({ success: false, message: 'Please specify at least one valid product to return.' });
@@ -213,7 +243,7 @@ export default function ReturnsClient({ returns, orders, branches, variants, cus
 
     const isUploading = photoItems.some(p => p.isUploading);
     if (isUploading) {
-      setStatusMsg({ success: false, message: 'Please wait until all photo uploads have finished.' });
+      setStatusMsg({ success: false, message: 'Please wait until all uploads have finished.' });
       return;
     }
 
@@ -224,6 +254,11 @@ export default function ReturnsClient({ returns, orders, branches, variants, cus
     }));
 
     const payloadPhotos = photoItems.map(p => p.url).filter(p => p.trim() !== '');
+    const payloadAttachments = photoItems.map(p => ({
+      fileUrl: p.url,
+      fileName: p.fileName || 'file',
+      fileType: p.fileType || 'image/png'
+    })).filter(p => p.fileUrl.trim() !== '');
 
     setStatusMsg(null);
     startTransition(async () => {
@@ -234,9 +269,10 @@ export default function ReturnsClient({ returns, orders, branches, variants, cus
         orderId: orderId || undefined,
         invoiceNumber: invoiceNumber || undefined,
         reason,
-        remarks: remarks || undefined,
+        remarks: reason === 'OTHER' ? remarks : undefined, // only submit remarks if Other is selected
         items: payloadItems,
-        photos: payloadPhotos
+        photos: payloadPhotos,
+        attachments: payloadAttachments
       });
 
       if (res.success) {
@@ -327,7 +363,7 @@ export default function ReturnsClient({ returns, orders, branches, variants, cus
                       </td>
                       <td className="px-5 py-3.5 font-bold text-slate-700">{r.branchName || '—'}</td>
                       <td className="px-5 py-3.5 font-extrabold text-slate-655">
-                        <span className="bg-slate-100 px-2 py-0.5 rounded text-[8px] uppercase tracking-wide">{r.reason.replace('_', ' ')}</span>
+                        <span className="bg-slate-100 px-2 py-0.5 rounded text-[8px] uppercase tracking-wide">{mapReasonLabel(r.reason)}</span>
                       </td>
                       <td className="px-5 py-3.5 text-center">
                         <span className={`text-[9px] font-black uppercase inline-block px-2 py-0.5 rounded-md ${
@@ -421,14 +457,16 @@ export default function ReturnsClient({ returns, orders, branches, variants, cus
                 onChange={e => setReason(e.target.value as any)}
                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-slate-800 focus:bg-white transition-all font-semibold"
               >
-                <option value="DEFECTIVE">DEFECTIVE (Fabric Damage / Stitches)</option>
-                <option value="SOR_RETURN">SOR RETURN (Sale or Return agreement)</option>
-                <option value="WRONG_ITEM">WRONG ITEM RECEIVED (SKU Mismatch)</option>
-                <option value="EXCESS_QUANTITY">EXCESS QUANTITY SHIPPED</option>
-                <option value="CUSTOMER_REJECTION">CLIENT REJECTION (Commercial claim)</option>
-                <option value="TRANSIT_DAMAGE">DAMAGE IN TRANSIT (Courier issue)</option>
-                <option value="SIZE_ISSUE">SIZE SPECIFICATION ERROR</option>
-                <option value="OTHER">OTHER (Describe in remarks)</option>
+                <option value="DEFECTIVE">Defective Piece</option>
+                <option value="WRONG_ITEM">Wrong Item Received</option>
+                <option value="SIZE_ISSUE">Size Issue</option>
+                <option value="COLOUR_ISSUE">Colour Issue</option>
+                <option value="EXCESS_QUANTITY">Excess Quantity Received</option>
+                <option value="SHORT_QUANTITY">Short Quantity Received</option>
+                <option value="SOR_RETURN">SOR Return</option>
+                <option value="TRANSIT_DAMAGE">Transit Damage</option>
+                <option value="CUSTOMER_CANCELLATION">Customer Cancellation</option>
+                <option value="OTHER">Other</option>
               </select>
             </div>
           </div>
@@ -522,71 +560,113 @@ export default function ReturnsClient({ returns, orders, branches, variants, cus
             </button>
           </div>
 
-          {/* Photo references */}
+          {/* Proof references */}
           <div className="space-y-4">
             <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block flex items-center gap-1">
-              <Camera size={12} />Claim Proof Photos (1–10 photos)
+              <Camera size={12} />Claim Proof Attachments (1–10 files)
             </span>
             
             {photoItems.length > 0 && (
               <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
-                {photoItems.map((item, idx) => (
-                  <div key={idx} className="relative group border border-slate-200 rounded-2xl overflow-hidden bg-slate-50 flex flex-col items-center justify-center h-28 p-2">
-                    {item.isUrlInput ? (
-                      <div className="w-full h-full flex flex-col justify-between">
-                        <input
-                          type="url"
-                          placeholder="Image URL"
-                          required
-                          value={item.url}
-                          onChange={e => handleUrlChange(idx, e.target.value)}
-                          className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1 text-[10px] focus:outline-none focus:border-slate-800 font-semibold"
-                        />
-                        {item.url && (
-                          <div className="w-full flex-1 mt-1 rounded-lg overflow-hidden border border-slate-100 flex items-center justify-center bg-white relative">
-                            <img src={item.url} alt="preview" className="max-h-full max-w-full object-contain" />
+                {photoItems.map((item, idx) => {
+                  const isPdf = item.fileType === 'application/pdf' || item.url.toLowerCase().split('?')[0].endsWith('.pdf');
+                  return (
+                    <div key={idx} className="relative group border border-slate-200 rounded-2xl overflow-hidden bg-slate-50 flex flex-col items-center justify-center h-28 p-2">
+                      {item.isUrlInput ? (
+                        <div className="w-full h-full flex flex-col justify-between">
+                          <input
+                            type="url"
+                            placeholder="File URL"
+                            required
+                            value={item.url}
+                            onChange={e => handleUrlChange(idx, e.target.value)}
+                            className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1 text-[10px] focus:outline-none focus:border-slate-800 font-semibold"
+                          />
+                          {item.url && (
+                            <div className="w-full flex-1 mt-1 rounded-lg overflow-hidden border border-slate-100 flex items-center justify-center bg-white relative">
+                              {isPdf ? (
+                                <FileText size={18} className="text-rose-500" />
+                              ) : (
+                                <img src={item.url} alt="preview" className="max-h-full max-w-full object-contain" />
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setActivePreviewUrl(item.url);
+                                  setActivePreviewType(isPdf ? 'application/pdf' : 'image/png');
+                                }}
+                                className="absolute inset-0 bg-black/10 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center text-white font-bold text-[8px] uppercase"
+                              >
+                                View
+                              </button>
+                            </div>
+                          )}
+                          <div className="flex justify-between items-center mt-1">
+                            {item.url && (
+                              <a
+                                href={item.url}
+                                download={item.fileName || 'file'}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-[9px] text-slate-500 font-bold hover:underline"
+                              >
+                                Download
+                              </a>
+                            )}
                             <button
                               type="button"
-                              onClick={() => setActivePreviewUrl(item.url)}
-                              className="absolute inset-0 bg-black/10 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center text-white font-bold text-[8px] uppercase"
+                              onClick={() => handleRemovePhoto(idx)}
+                              className="text-center text-[9px] text-rose-500 font-bold hover:underline cursor-pointer"
                             >
-                              View
+                              Remove
                             </button>
                           </div>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => handleRemovePhoto(idx)}
-                          className="mt-1 text-center text-[9px] text-rose-500 font-bold hover:underline cursor-pointer"
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    ) : (
-                      <>
-                        {item.isUploading ? (
-                          <div className="flex flex-col items-center justify-center gap-1.5 text-slate-400">
-                            <div className="animate-spin rounded-full h-4 w-4 border-2 border-slate-350 border-t-slate-800" />
-                            <span className="text-[8px] font-bold">Uploading...</span>
-                          </div>
-                        ) : (
-                          <div className="relative w-full h-full">
-                            <img src={item.url} alt="Upload preview" className="w-full h-full object-cover rounded-xl" />
-                            
-                            <div className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl flex flex-col items-center justify-center gap-1.5 p-1">
-                              <div className="flex gap-1.5">
+                        </div>
+                      ) : (
+                        <>
+                          {item.isUploading ? (
+                            <div className="flex flex-col items-center justify-center gap-1.5 text-slate-400">
+                              <div className="animate-spin rounded-full h-4 w-4 border-2 border-slate-350 border-t-slate-800" />
+                              <span className="text-[8px] font-bold">Uploading...</span>
+                            </div>
+                          ) : (
+                            <div className="relative w-full h-full flex flex-col items-center justify-between">
+                              {isPdf ? (
+                                <div className="flex-1 flex flex-col items-center justify-center text-slate-400 gap-1">
+                                  <FileText size={24} className="text-rose-500" />
+                                  <span className="text-[8px] font-bold text-slate-600 truncate max-w-[120px]" title={item.fileName}>
+                                    {item.fileName}
+                                  </span>
+                                </div>
+                              ) : (
+                                <img src={item.url} alt="Upload preview" className="w-full h-[65%] object-cover rounded-xl" />
+                              )}
+                              
+                              <div className="w-full flex gap-1 justify-center mt-1">
                                 <button
                                   type="button"
-                                  onClick={() => setActivePreviewUrl(item.url)}
-                                  className="bg-white/95 hover:bg-white text-slate-805 text-[8px] px-1.5 py-0.5 rounded font-black cursor-pointer"
+                                  onClick={() => {
+                                    setActivePreviewUrl(item.url);
+                                    setActivePreviewType(item.fileType || null);
+                                  }}
+                                  className="bg-white hover:bg-slate-100 text-slate-800 text-[8px] px-1 py-0.5 rounded border border-slate-200 font-black cursor-pointer"
                                 >
                                   View
                                 </button>
-                                <label className="bg-white/95 hover:bg-white text-slate-805 text-[8px] px-1.5 py-0.5 rounded font-black cursor-pointer">
+                                <a
+                                  href={item.url}
+                                  download={item.fileName}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="bg-white hover:bg-slate-100 text-slate-800 text-[8px] px-1 py-0.5 rounded border border-slate-200 font-black flex items-center justify-center"
+                                >
+                                  Download
+                                </a>
+                                <label className="bg-white hover:bg-slate-100 text-slate-800 text-[8px] px-1 py-0.5 rounded border border-slate-200 font-black cursor-pointer">
                                   Replace
                                   <input
                                     type="file"
-                                    accept="image/png, image/jpeg, image/jpg, image/webp"
+                                    accept="image/png, image/jpeg, image/jpg, image/webp, application/pdf"
                                     className="hidden"
                                     onChange={e => {
                                       if (e.target.files && e.target.files[0]) {
@@ -595,60 +675,60 @@ export default function ReturnsClient({ returns, orders, branches, variants, cus
                                     }}
                                   />
                                 </label>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => handleRemovePhoto(idx)}
-                                className="bg-rose-600 hover:bg-rose-500 text-white text-[8px] px-1.5 py-0.5 rounded font-black cursor-pointer"
-                              >
-                                Remove
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                        {item.error && (
-                          <div className="absolute inset-0 bg-rose-50/95 flex flex-col items-center justify-center p-2 text-center text-[8px] font-bold text-rose-600">
-                            <span>Upload failed</span>
-                            <div className="flex gap-2 mt-1">
-                              <button
-                                type="button"
-                                onClick={() => handleRemovePhoto(idx)}
-                                className="underline uppercase"
-                              >
-                                Remove
-                              </button>
-                              {item.file && (
                                 <button
                                   type="button"
-                                  onClick={() => {
-                                    if (item.file) {
-                                      setPhotoItems(prev => prev.map((p, i) => i === idx ? { ...p, isUploading: true, error: undefined } : p));
-                                      uploadSingleFile(item.file, idx);
-                                    }
-                                  }}
-                                  className="underline uppercase text-slate-850"
+                                  onClick={() => handleRemovePhoto(idx)}
+                                  className="bg-rose-600 hover:bg-rose-500 text-white text-[8px] px-1 py-0.5 rounded font-black cursor-pointer"
                                 >
-                                  Retry
+                                  Delete
                                 </button>
-                              )}
+                              </div>
                             </div>
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </div>
-                ))}
+                          )}
+                          {item.error && (
+                            <div className="absolute inset-0 bg-rose-50/95 flex flex-col items-center justify-center p-2 text-center text-[8px] font-bold text-rose-600">
+                              <span>Upload failed</span>
+                              <div className="flex gap-2 mt-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemovePhoto(idx)}
+                                  className="underline uppercase"
+                                >
+                                  Remove
+                                </button>
+                                {item.file && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (item.file) {
+                                        setPhotoItems(prev => prev.map((p, i) => i === idx ? { ...p, isUploading: true, error: undefined } : p));
+                                        uploadSingleFile(item.file, idx);
+                                      }
+                                    }}
+                                    className="underline uppercase text-slate-850"
+                                  >
+                                    Retry
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
-
+ 
             <div className="flex gap-3">
               <label className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 font-bold p-2 px-4 rounded-xl flex items-center gap-1.5 shadow-sm transition-colors text-[10px] cursor-pointer">
                 <Plus size={12} />
-                <span>Upload Photos</span>
+                <span>Upload Files</span>
                 <input
                   type="file"
                   multiple
-                  accept="image/png, image/jpeg, image/jpg, image/webp"
+                  accept="image/png, image/jpeg, image/jpg, image/webp, application/pdf"
                   className="hidden"
                   onChange={e => {
                     if (e.target.files) {
@@ -657,7 +737,7 @@ export default function ReturnsClient({ returns, orders, branches, variants, cus
                   }}
                 />
               </label>
-
+ 
               <button
                 type="button"
                 onClick={handleAddUrlField}
@@ -668,20 +748,22 @@ export default function ReturnsClient({ returns, orders, branches, variants, cus
               </button>
             </div>
           </div>
-
-          {/* Remarks text area */}
-          <div className="space-y-1.5">
-            <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider">Reason Details / Remarks *</label>
-            <textarea
-              required
-              placeholder="Describe the defect details, transit damage issues, color mismatches, etc. in depth..."
-              rows={3}
-              value={remarks}
-              onChange={e => setRemarks(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-205 rounded-xl px-3.5 py-2.5 focus:outline-none focus:border-slate-800 focus:bg-white font-semibold text-[11px]"
-            />
-          </div>
-
+ 
+          {/* Remarks text area - shown conditionally and required only if Other is selected */}
+          {reason === 'OTHER' && (
+            <div className="space-y-1.5">
+              <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider">Reason Details / Remarks *</label>
+              <textarea
+                required={reason === 'OTHER'}
+                placeholder="Describe the details for selecting Other..."
+                rows={3}
+                value={remarks}
+                onChange={e => setRemarks(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-205 rounded-xl px-3.5 py-2.5 focus:outline-none focus:border-slate-800 focus:bg-white font-semibold text-[11px]"
+              />
+            </div>
+          )}
+ 
           {/* Submit */}
           <div className="pt-4 border-t border-slate-100">
             <button
@@ -694,22 +776,30 @@ export default function ReturnsClient({ returns, orders, branches, variants, cus
           </div>
         </form>
       )}
-
+ 
       {/* Lightbox Preview Modal */}
       {activePreviewUrl && (
         <div className="fixed inset-0 z-[100] bg-slate-950/90 flex flex-col items-center justify-center p-4">
           <button
-            onClick={() => setActivePreviewUrl(null)}
-            className="absolute top-4 right-4 bg-slate-800/80 hover:bg-slate-700 text-white rounded-xl p-2 cursor-pointer transition-colors border border-slate-700"
+            onClick={() => { setActivePreviewUrl(null); setActivePreviewType(null); }}
+            className="absolute top-4 right-4 bg-slate-800/80 hover:bg-slate-700 text-white rounded-xl p-2 cursor-pointer transition-colors border border-slate-700 font-bold z-50 flex items-center gap-1"
           >
-            <X size={18} />
+            <X size={18} /> Close
           </button>
-          <div className="flex-1 w-full flex items-center justify-center overflow-auto">
-            <img 
-              src={activePreviewUrl} 
-              alt="Preview Full Size" 
-              className="max-h-[85vh] max-w-full object-contain rounded-lg"
-            />
+          <div className="flex-1 w-full flex items-center justify-center overflow-auto p-4">
+            {activePreviewUrl.toLowerCase().split('?')[0].endsWith('.pdf') || (activePreviewType && activePreviewType.includes('pdf')) ? (
+              <iframe 
+                src={activePreviewUrl} 
+                className="w-full max-w-5xl h-[85vh] rounded-2xl bg-white border-0 shadow-2xl"
+                title="Document Attachment Preview"
+              />
+            ) : (
+              <img 
+                src={activePreviewUrl} 
+                alt="Preview Full Size" 
+                className="max-h-[85vh] max-w-full object-contain rounded-2xl shadow-2xl"
+              />
+            )}
           </div>
         </div>
       )}

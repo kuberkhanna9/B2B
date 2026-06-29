@@ -1,6 +1,7 @@
 import { getSession } from '@/utils/session';
-import { getB2BAdminStats } from '@/utils/db';
+import { getB2BAdminStats, getSuperAdminAnalytics } from '@/utils/db';
 import Navigation from '@/components/Navigation';
+import AnalyticsDashboard from './admin/b2b/AnalyticsDashboard';
 import { 
   Users, 
   ShoppingCart, 
@@ -31,6 +32,8 @@ export default async function AdminDashboardPage() {
   }
 
   const stats = await getB2BAdminStats();
+  const isSuperAdmin = user.role === 'SUPERADMIN';
+  const analyticsData = isSuperAdmin ? await getSuperAdminAnalytics() : null;
 
   const formatCurrency = (val: number) => {
     return new Intl.NumberFormat('en-IN', {
@@ -103,6 +106,11 @@ export default async function AdminDashboardPage() {
             </div>
           </div>
         </section>
+
+        {/* SuperAdmin Analytics Dashboard */}
+        {isSuperAdmin && analyticsData && (
+          <AnalyticsDashboard data={analyticsData} />
+        )}
 
         {/* 2. Top Rankings */}
         <section className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">

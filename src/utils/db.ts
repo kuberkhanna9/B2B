@@ -347,40 +347,11 @@ async function db_getB2BCatalog(customerId?: string): Promise<CatalogProduct[]> 
       customerId = session.customerId;
     }
   }
-  // 1. Fetch physical stock transactions to compile current physical stock
-  const txRes = await db.select().from(schema.stockTransactions);
-  const transactions: StockTransaction[] = txRes.map(t => ({
-    id: t.id,
-    requestId: t.requestId,
-    variantId: t.variantId,
-    transactionType: t.transactionType as any,
-    quantity: t.quantity,
-    referenceNumber: t.referenceNumber || undefined,
-    invoiceNumber: t.invoiceNumber || undefined,
-    remarks: t.remarks || undefined,
-    createdBy: t.createdBy,
-    createdAt: t.createdAt.toISOString()
-  }));
 
-  // 2. Fetch reserved quantities from sales orders
-  // Reserved stock are items in APPROVED or PARTIALLY_FULFILLED sales orders that have not yet been dispatched.
-  // Formula: Reserved = sum(approvedQuantity - dispatchedQuantity)
-  const reservedMap: Record<string, number> = {};
-  const activeOrders = await db.select({
-    variantId: schema.salesOrderItems.variantId,
-    approvedQty: schema.salesOrderItems.approvedQuantity,
-    dispatchedQty: schema.salesOrderItems.dispatchedQuantity
-  })
-  .from(schema.salesOrderItems)
-  .innerJoin(schema.salesOrders, eq(schema.salesOrderItems.orderId, schema.salesOrders.id))
-  .where(inArray(schema.salesOrders.status, ['APPROVED', 'PARTIALLY_FULFILLED']));
+  // 1. Fetch available stock precomputed from database view
+  const availabilityList = await db.select().from(schema.inventoryAvailability);
 
-  for (const item of activeOrders) {
-    const reservedAmt = Math.max(0, item.approvedQty - item.dispatchedQty);
-    reservedMap[item.variantId] = (reservedMap[item.variantId] || 0) + reservedAmt;
-  }
-
-  // 3. Fetch customer specific pricing overrides
+  // 2. Fetch customer specific pricing overrides
   const pricingMap: Record<string, number> = {};
   if (customerId) {
     const customPricing = await db.select()
@@ -391,7 +362,7 @@ async function db_getB2BCatalog(customerId?: string): Promise<CatalogProduct[]> 
     }
   }
 
-  // 4. Load products, colors, sizes, variants
+  // 3. Load products, colors, sizes, variants
   const productsList = await db.select().from(schema.products).where(eq(schema.products.active, true));
   const colorsList = await db.select().from(schema.productColors);
   const sizesList = await db.select().from(schema.productSizes);
@@ -407,10 +378,10 @@ async function db_getB2BCatalog(customerId?: string): Promise<CatalogProduct[]> 
       const colorObj = colorsList.find(c => c.id === v.colorId);
       const sizeObj = sizesList.find(s => s.id === v.sizeId);
       
-      const stock = compileStockForVariant(v.id, transactions);
-      const physical = stock.readyStock;
-      const reserved = reservedMap[v.id] || 0;
-      const available = Math.max(0, physical - reserved);
+      const stockInfo = availabilityList.find(a => a.variantId === v.id);
+      const physical = stockInfo ? stockInfo.physicalStock : 0;
+      const reserved = stockInfo ? stockInfo.reservedStock : 0;
+      const available = stockInfo ? stockInfo.availableStock : 0;
 
       const mrp = Number(v.mrp);
       const standardWholesale = Number(v.wholesalePrice);
@@ -1562,6 +1533,78 @@ async function db_getB2BAdminStats() {
   };
 }
 
+async function db_getSuperAdminAnalytics() {
+  const state = {
+    customers: await db.select().from(schema.customers),
+    salesOrders: await db.select().from(schema.salesOrders),
+    salesOrderItems: await db.select().from(schema.salesOrderItems),
+    productVariants: await db.select().from(schema.productVariants),
+    products: await db.select().from(schema.products),
+    customerLedger: await db.select().from(schema.customerLedger),
+    returnRequests: await db.select().from(schema.returnRequests),
+    returnRequestItems: await db.select().from(schema.returnRequestItems),
+    customerBranches: await db.select().from(schema.customerBranches),
+    dispatches: await db.select().from(schema.dispatches),
+    auditLogs: await db.select().from(schema.auditLogs),
+    stockTransactions: await db.select().from(schema.stockTransactions)
+  };
+
+  return {
+    customers: state.customers.map(c => ({
+      ...c,
+      phone: c.phone || '',
+      email: c.email || '',
+      billingAddress: c.billingAddress || '',
+      shippingAddress: c.shippingAddress || '',
+      createdAt: c.createdAt.toISOString()
+    })),
+    salesOrders: state.salesOrders.map(o => ({
+      ...o,
+      createdAt: o.createdAt.toISOString(),
+      approvedAt: o.approvedAt ? o.approvedAt.toISOString() : null
+    })),
+    salesOrderItems: state.salesOrderItems.map(i => ({
+      ...i,
+      createdAt: i.createdAt.toISOString()
+    })),
+    productVariants: state.productVariants.map(v => ({
+      ...v,
+      createdAt: v.createdAt.toISOString()
+    })),
+    products: state.products.map(p => ({
+      ...p,
+      createdAt: p.createdAt.toISOString()
+    })),
+    customerLedger: state.customerLedger.map(l => ({
+      ...l,
+      date: l.date.toISOString(),
+      createdAt: l.createdAt.toISOString()
+    })),
+    returnRequests: state.returnRequests.map(r => ({
+      ...r,
+      createdAt: r.createdAt.toISOString()
+    })),
+    returnRequestItems: state.returnRequestItems,
+    customerBranches: state.customerBranches.map(b => ({
+      ...b,
+      createdAt: b.createdAt.toISOString()
+    })),
+    dispatches: state.dispatches.map(d => ({
+      ...d,
+      dispatchDate: d.dispatchDate.toISOString(),
+      createdAt: d.createdAt.toISOString()
+    })),
+    auditLogs: state.auditLogs.map(a => ({
+      ...a,
+      createdAt: a.createdAt.toISOString()
+    })),
+    stockTransactions: state.stockTransactions.map(t => ({
+      ...t,
+      createdAt: t.createdAt.toISOString()
+    }))
+  };
+}
+
 // =============================================================================
 // CUSTOMER BRANCH MANAGEMENT (SUPERADMIN/ADMIN/B2B CUSTOMER)
 // =============================================================================
@@ -1906,7 +1949,12 @@ async function db_getReturnRequests(customerId?: string): Promise<any[]> {
 
     const legacyAttachments = await db.select().from(schema.returnAttachments).where(eq(schema.returnAttachments.returnRequestId, r.id));
     const newImages = await db.select().from(schema.returnClaimImages).where(eq(schema.returnClaimImages.returnId, r.id));
-    const allPhotos = [...legacyAttachments.map(a => a.fileUrl), ...newImages.map(img => img.imageUrl)];
+    const newClaimAttachments = await db.select().from(schema.returnClaimAttachments).where(eq(schema.returnClaimAttachments.returnId, r.id));
+    const allPhotos = [
+      ...legacyAttachments.map(a => a.fileUrl),
+      ...newImages.map(img => img.imageUrl),
+      ...newClaimAttachments.filter(att => !att.fileType.includes('pdf')).map(att => att.fileUrl)
+    ];
     const uniquePhotos = Array.from(new Set(allPhotos));
 
     const resolutions = await db.select().from(schema.returnResolutions).where(eq(schema.returnResolutions.returnRequestId, r.id)).limit(1);
@@ -1947,6 +1995,14 @@ async function db_getReturnRequests(customerId?: string): Promise<any[]> {
         uploadedBy: img.uploadedBy,
         uploadedAt: img.uploadedAt ? img.uploadedAt.toISOString() : undefined
       })),
+      claimAttachments: newClaimAttachments.map(att => ({
+        id: att.id,
+        fileUrl: att.fileUrl,
+        fileName: att.fileName,
+        fileType: att.fileType,
+        uploadedBy: att.uploadedBy,
+        uploadedAt: att.uploadedAt ? att.uploadedAt.toISOString() : undefined
+      })),
       resolution: resolutions.length > 0 ? {
         id: resolutions[0].id,
         returnRequestId: resolutions[0].returnRequestId,
@@ -1967,10 +2023,11 @@ async function db_createReturnRequest(data: {
   branchId?: string;
   orderId?: string;
   invoiceNumber?: string;
-  reason: 'DEFECTIVE' | 'SOR_RETURN' | 'WRONG_ITEM' | 'EXCESS_QUANTITY' | 'CUSTOMER_REJECTION' | 'TRANSIT_DAMAGE' | 'SIZE_ISSUE' | 'OTHER';
+  reason: 'DEFECTIVE' | 'SOR_RETURN' | 'WRONG_ITEM' | 'EXCESS_QUANTITY' | 'CUSTOMER_REJECTION' | 'TRANSIT_DAMAGE' | 'SIZE_ISSUE' | 'OTHER' | 'COLOUR_ISSUE' | 'SHORT_QUANTITY' | 'CUSTOMER_CANCELLATION';
   remarks?: string;
   items: { variantId?: string; customItemName?: string; quantity: number }[];
   photos?: string[];
+  attachments?: { fileUrl: string; fileName: string; fileType: string }[];
   createdBy: string;
   createdByType: 'CUSTOMER' | 'ADMIN';
 }): Promise<{ success: boolean; returnRequest: any }> {
@@ -2003,6 +2060,18 @@ async function db_createReturnRequest(data: {
     });
   }
 
+  if (data.attachments) {
+    for (const att of data.attachments) {
+      await db.insert(schema.returnClaimAttachments).values({
+        returnId: r.id,
+        fileUrl: att.fileUrl,
+        fileName: att.fileName,
+        fileType: att.fileType,
+        uploadedBy: data.createdBy
+      });
+    }
+  }
+
   if (data.photos) {
     for (const photo of data.photos) {
       await db.insert(schema.returnAttachments).values({
@@ -2015,6 +2084,26 @@ async function db_createReturnRequest(data: {
         imageUrl: photo,
         uploadedBy: data.createdBy
       });
+
+      // Also add to returnClaimAttachments if it's not already in there (legacy support)
+      const filename = photo.split('/').pop() || 'image.png';
+      let filetype = 'image/png';
+      if (photo.toLowerCase().endsWith('.jpg') || photo.toLowerCase().endsWith('.jpeg')) {
+        filetype = 'image/jpeg';
+      } else if (photo.toLowerCase().endsWith('.webp')) {
+        filetype = 'image/webp';
+      }
+      
+      const alreadyExists = (data.attachments || []).some(att => att.fileUrl === photo);
+      if (!alreadyExists) {
+        await db.insert(schema.returnClaimAttachments).values({
+          returnId: r.id,
+          fileUrl: photo,
+          fileName: filename,
+          fileType: filetype,
+          uploadedBy: data.createdBy
+        });
+      }
     }
   }
 
@@ -2233,238 +2322,18 @@ async function db_getRolePermissions() {
 }
 
 // =============================================================================
-// OFFLINE MOCK WRAPPERS
+// DATABASE EXPORTS
 // =============================================================================
 
-export async function logB2BAudit(...args: any[]) {
-  if (!db) {
-    const { jsonDb } = await import('./jsonDb');
-    return (jsonDb.logB2BAudit as any)(...args);
-  }
-  return (db_logB2BAudit as any)(...args);
-}
+const logB2BAudit = db_logB2BAudit;
+const logB2BAuditDetailed = db_logB2BAuditDetailed;
+const createB2BNotification = db_createB2BNotification;
+const getSalesOrderDetails = db_getSalesOrderDetails;
+const getSalesOrders = db_getSalesOrders;
+const getPaymentReferences = db_getPaymentReferences;
+const getB2BCatalog = db_getB2BCatalog;
 
-export async function getCustomers(...args: any[]) {
-  if (!db) {
-    const { jsonDb } = await import('./jsonDb');
-    return (jsonDb.getCustomers as any)(...args);
-  }
-  return (db_getCustomers as any)(...args);
-}
-
-export async function createCustomer(...args: any[]) {
-  if (!db) {
-    const { jsonDb } = await import('./jsonDb');
-    return (jsonDb.createCustomer as any)(...args);
-  }
-  return (db_createCustomer as any)(...args);
-}
-
-export async function updateCustomer(...args: any[]) {
-  if (!db) {
-    const { jsonDb } = await import('./jsonDb');
-    return (jsonDb.updateCustomer as any)(...args);
-  }
-  return (db_updateCustomer as any)(...args);
-}
-
-export async function getCustomerUsers(...args: any[]) {
-  if (!db) {
-    const { jsonDb } = await import('./jsonDb');
-    return (jsonDb.getCustomerUsers as any)(...args);
-  }
-  return (db_getCustomerUsers as any)(...args);
-}
-
-export async function createCustomerUser(...args: any[]) {
-  if (!db) {
-    const { jsonDb } = await import('./jsonDb');
-    return (jsonDb.createCustomerUser as any)(...args);
-  }
-  return (db_createCustomerUser as any)(...args);
-}
-
-export async function getCustomerPricing(...args: any[]) {
-  if (!db) {
-    const { jsonDb } = await import('./jsonDb');
-    return (jsonDb.getCustomerPricing as any)(...args);
-  }
-  return (db_getCustomerPricing as any)(...args);
-}
-
-export async function setCustomerPricing(...args: any[]) {
-  if (!db) {
-    const { jsonDb } = await import('./jsonDb');
-    return (jsonDb.setCustomerPricing as any)(...args);
-  }
-  return (db_setCustomerPricing as any)(...args);
-}
-
-export async function deleteCustomerPricing(...args: any[]) {
-  if (!db) {
-    const { jsonDb } = await import('./jsonDb');
-    return (jsonDb.deleteCustomerPricing as any)(...args);
-  }
-  return (db_deleteCustomerPricing as any)(...args);
-}
-
-export async function getB2BCatalog(...args: any[]) {
-  if (!db) {
-    const { jsonDb } = await import('./jsonDb');
-    return (jsonDb.getB2BCatalog as any)(...args);
-  }
-  return (db_getB2BCatalog as any)(...args);
-}
-
-export async function createB2BNotification(...args: any[]) {
-  if (!db) {
-    const { jsonDb } = await import('./jsonDb');
-    return (jsonDb.createB2BNotification as any)(...args);
-  }
-  return (db_createB2BNotification as any)(...args);
-}
-
-export async function getNotifications(...args: any[]) {
-  if (!db) {
-    const { jsonDb } = await import('./jsonDb');
-    return (jsonDb.getNotifications as any)(...args);
-  }
-  return (db_getNotifications as any)(...args);
-}
-
-export async function markNotificationsAsRead(...args: any[]) {
-  if (!db) {
-    const { jsonDb } = await import('./jsonDb');
-    return (jsonDb.markNotificationsAsRead as any)(...args);
-  }
-  return (db_markNotificationsAsRead as any)(...args);
-}
-
-export async function getSalesOrders(...args: any[]) {
-  if (!db) {
-    const { jsonDb } = await import('./jsonDb');
-    return (jsonDb.getSalesOrders as any)(...args);
-  }
-  return (db_getSalesOrders as any)(...args);
-}
-
-export async function getSalesOrderDetails(...args: any[]) {
-  if (!db) {
-    const { jsonDb } = await import('./jsonDb');
-    return (jsonDb.getSalesOrderDetails as any)(...args);
-  }
-  return (db_getSalesOrderDetails as any)(...args);
-}
-
-export async function createSalesOrder(...args: any[]) {
-  if (!db) {
-    const { jsonDb } = await import('./jsonDb');
-    return (jsonDb.createSalesOrder as any)(...args);
-  }
-  return (db_createSalesOrder as any)(...args);
-}
-
-export async function approveSalesOrder(...args: any[]) {
-  if (!db) {
-    const { jsonDb } = await import('./jsonDb');
-    return (jsonDb.approveSalesOrder as any)(...args);
-  }
-  return (db_approveSalesOrder as any)(...args);
-}
-
-export async function rejectSalesOrder(...args: any[]) {
-  if (!db) {
-    const { jsonDb } = await import('./jsonDb');
-    return (jsonDb.rejectSalesOrder as any)(...args);
-  }
-  return (db_rejectSalesOrder as any)(...args);
-}
-
-export async function getDispatches(...args: any[]) {
-  if (!db) {
-    const { jsonDb } = await import('./jsonDb');
-    return (jsonDb.getDispatches as any)(...args);
-  }
-  return (db_getDispatches as any)(...args);
-}
-
-export async function createDispatch(...args: any[]) {
-  if (!db) {
-    const { jsonDb } = await import('./jsonDb');
-    return (jsonDb.createDispatch as any)(...args);
-  }
-  return (db_createDispatch as any)(...args);
-}
-
-export async function getInvoices(...args: any[]) {
-  if (!db) {
-    const { jsonDb } = await import('./jsonDb');
-    return (jsonDb.getInvoices as any)(...args);
-  }
-  return (db_getInvoices as any)(...args);
-}
-
-export async function createInvoice(...args: any[]) {
-  if (!db) {
-    const { jsonDb } = await import('./jsonDb');
-    return (jsonDb.createInvoice as any)(...args);
-  }
-  return (db_createInvoice as any)(...args);
-}
-
-export async function getPaymentReferences(...args: any[]) {
-  if (!db) {
-    const { jsonDb } = await import('./jsonDb');
-    return (jsonDb.getPaymentReferences as any)(...args);
-  }
-  return (db_getPaymentReferences as any)(...args);
-}
-
-export async function submitPaymentReference(...args: any[]) {
-  if (!db) {
-    const { jsonDb } = await import('./jsonDb');
-    return (jsonDb.submitPaymentReference as any)(...args);
-  }
-  return (db_submitPaymentReference as any)(...args);
-}
-
-export async function verifyPaymentReference(...args: any[]) {
-  if (!db) {
-    const { jsonDb } = await import('./jsonDb');
-    return (jsonDb.verifyPaymentReference as any)(...args);
-  }
-  return (db_verifyPaymentReference as any)(...args);
-}
-
-export async function rejectPaymentReference(...args: any[]) {
-  if (!db) {
-    const { jsonDb } = await import('./jsonDb');
-    return (jsonDb.rejectPaymentReference as any)(...args);
-  }
-  return (db_rejectPaymentReference as any)(...args);
-}
-
-export async function getCustomerLedger(...args: any[]) {
-  if (!db) {
-    const { jsonDb } = await import('./jsonDb');
-    return (jsonDb.getCustomerLedger as any)(...args);
-  }
-  return (db_getCustomerLedger as any)(...args);
-}
-
-export async function getB2BAdminStats(...args: any[]) {
-  if (!db) {
-    const { jsonDb } = await import('./jsonDb');
-    return (jsonDb.getB2BAdminStats as any)(...args);
-  }
-  return (db_getB2BAdminStats as any)(...args);
-}
-
-export async function getAllPricingOverrides(...args: any[]) {
-  if (!db) {
-    const { jsonDb } = await import('./jsonDb');
-    return (jsonDb.getAllPricingOverrides as any)(...args);
-  }
+export async function getAllPricingOverrides() {
   const { customerPricing } = await import('@/db/schema');
   const res = await db.select().from(customerPricing);
   return res.map(p => ({
@@ -2476,131 +2345,51 @@ export async function getAllPricingOverrides(...args: any[]) {
   }));
 }
 
-export async function getCustomerBranches(...args: any[]) {
-  if (!db) {
-    const { jsonDb } = await import('./jsonDb');
-    return (jsonDb.getCustomerBranches as any)(...args);
-  }
-  return (db_getCustomerBranches as any)(...args);
-}
-
-export async function createCustomerBranch(...args: any[]) {
-  if (!db) {
-    const { jsonDb } = await import('./jsonDb');
-    return (jsonDb.createCustomerBranch as any)(...args);
-  }
-  return (db_createCustomerBranch as any)(...args);
-}
-
-export async function updateCustomerBranch(...args: any[]) {
-  if (!db) {
-    const { jsonDb } = await import('./jsonDb');
-    return (jsonDb.updateCustomerBranch as any)(...args);
-  }
-  return (db_updateCustomerBranch as any)(...args);
-}
-
-export async function createSalesOrderOnBehalf(...args: any[]) {
-  if (!db) {
-    const { jsonDb } = await import('./jsonDb');
-    return (jsonDb.createSalesOrderOnBehalf as any)(...args);
-  }
-  return (db_createSalesOrderOnBehalf as any)(...args);
-}
-
-export async function convertCustomItemToSKU(...args: any[]) {
-  if (!db) {
-    const { jsonDb } = await import('./jsonDb');
-    return (jsonDb.convertCustomItemToSKU as any)(...args);
-  }
-  return (db_convertCustomItemToSKU as any)(...args);
-}
-
-export async function getReturnRequests(...args: any[]) {
-  if (!db) {
-    const { jsonDb } = await import('./jsonDb');
-    return (jsonDb.getReturnRequests as any)(...args);
-  }
-  return (db_getReturnRequests as any)(...args);
-}
-
-export async function createReturnRequest(...args: any[]) {
-  if (!db) {
-    const { jsonDb } = await import('./jsonDb');
-    return (jsonDb.createReturnRequest as any)(...args);
-  }
-  return (db_createReturnRequest as any)(...args);
-}
-
-export async function resolveReturnRequest(...args: any[]) {
-  if (!db) {
-    const { jsonDb } = await import('./jsonDb');
-    return (jsonDb.resolveReturnRequest as any)(...args);
-  }
-  return (db_resolveReturnRequest as any)(...args);
-}
-
-export async function getB2BBranchReporting(...args: any[]) {
-  if (!db) {
-    const { jsonDb } = await import('./jsonDb');
-    return (jsonDb.getB2BBranchReporting as any)(...args);
-  }
-  return (db_getB2BBranchReporting as any)(...args);
-}
-
-export async function logB2BAuditDetailed(...args: any[]) {
-  if (!db) {
-    const { jsonDb } = await import('./jsonDb');
-    return (jsonDb.logB2BAuditDetailed as any)(...args);
-  }
-  return (db_logB2BAuditDetailed as any)(...args);
-}
-
-export async function getBranchUsers(...args: any[]) {
-  if (!db) {
-    const { jsonDb } = await import('./jsonDb');
-    return (jsonDb.getBranchUsers as any)(...args);
-  }
-  return (db_getBranchUsers as any)(...args);
-}
-
-export async function createBranchUser(...args: any[]) {
-  if (!db) {
-    const { jsonDb } = await import('./jsonDb');
-    return (jsonDb.createBranchUser as any)(...args);
-  }
-  return (db_createBranchUser as any)(...args);
-}
-
-export async function updateBranchUser(...args: any[]) {
-  if (!db) {
-    const { jsonDb } = await import('./jsonDb');
-    return (jsonDb.updateBranchUser as any)(...args);
-  }
-  return (db_updateBranchUser as any)(...args);
-}
-
-export async function getRoles(...args: any[]) {
-  if (!db) {
-    const { jsonDb } = await import('./jsonDb');
-    return (jsonDb.getRoles as any)(...args);
-  }
-  return (db_getRoles as any)(...args);
-}
-
-export async function getPermissions(...args: any[]) {
-  if (!db) {
-    const { jsonDb } = await import('./jsonDb');
-    return (jsonDb.getPermissions as any)(...args);
-  }
-  return (db_getPermissions as any)(...args);
-}
-
-export async function getRolePermissions(...args: any[]) {
-  if (!db) {
-    const { jsonDb } = await import('./jsonDb');
-    return (jsonDb.getRolePermissions as any)(...args);
-  }
-  return (db_getRolePermissions as any)(...args);
-}
+export {
+  db_logB2BAudit as logB2BAudit,
+  db_logB2BAuditDetailed as logB2BAuditDetailed,
+  db_getCustomers as getCustomers,
+  db_createCustomer as createCustomer,
+  db_updateCustomer as updateCustomer,
+  db_getCustomerUsers as getCustomerUsers,
+  db_createCustomerUser as createCustomerUser,
+  db_getBranchUsers as getBranchUsers,
+  db_createBranchUser as createBranchUser,
+  db_updateBranchUser as updateBranchUser,
+  db_getCustomerPricing as getCustomerPricing,
+  db_setCustomerPricing as setCustomerPricing,
+  db_deleteCustomerPricing as deleteCustomerPricing,
+  db_getB2BCatalog as getB2BCatalog,
+  db_createB2BNotification as createB2BNotification,
+  db_getNotifications as getNotifications,
+  db_markNotificationsAsRead as markNotificationsAsRead,
+  db_getSalesOrders as getSalesOrders,
+  db_getSalesOrderDetails as getSalesOrderDetails,
+  db_createSalesOrder as createSalesOrder,
+  db_approveSalesOrder as approveSalesOrder,
+  db_rejectSalesOrder as rejectSalesOrder,
+  db_getDispatches as getDispatches,
+  db_createDispatch as createDispatch,
+  db_getInvoices as getInvoices,
+  db_createInvoice as createInvoice,
+  db_getPaymentReferences as getPaymentReferences,
+  db_submitPaymentReference as submitPaymentReference,
+  db_verifyPaymentReference as verifyPaymentReference,
+  db_rejectPaymentReference as rejectPaymentReference,
+  db_getCustomerLedger as getCustomerLedger,
+  db_getB2BAdminStats as getB2BAdminStats,
+  db_getSuperAdminAnalytics as getSuperAdminAnalytics,
+  db_getRoles as getRoles,
+  db_getPermissions as getPermissions,
+  db_getRolePermissions as getRolePermissions,
+  db_getCustomerBranches as getCustomerBranches,
+  db_createCustomerBranch as createCustomerBranch,
+  db_updateCustomerBranch as updateCustomerBranch,
+  db_createSalesOrderOnBehalf as createSalesOrderOnBehalf,
+  db_convertCustomItemToSKU as convertCustomItemToSKU,
+  db_getReturnRequests as getReturnRequests,
+  db_createReturnRequest as createReturnRequest,
+  db_resolveReturnRequest as resolveReturnRequest,
+  db_getB2BBranchReporting as getB2BBranchReporting
+};
 
