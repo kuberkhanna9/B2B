@@ -170,7 +170,7 @@ export const priceHistory = pgTable('price_history', {
 });
 
 // 9. AUDIT_LOGS Table
-export const auditLogs = pgTable('b2b_audit_logs', {
+export const auditLogs = pgTable('audit_logs', {
   id: uuid('id').defaultRandom().primaryKey(),
   userId: uuid('user_id').references(() => profiles.id, { onDelete: 'set null' }),
   username: varchar('username', { length: 100 }),
@@ -192,8 +192,8 @@ export const auditLogs = pgTable('b2b_audit_logs', {
 // NEW B2B CUSTOMER PORTAL TABLES
 // =============================================================================
 
-// 10. COMPANIES Table (Mapped to customers in codebase)
-export const customers = pgTable('companies', {
+// 10. CUSTOMERS Table (Treating customer as Company entity)
+export const customers = pgTable('customers', {
   id: uuid('id').defaultRandom().primaryKey(),
   companyName: varchar('company_name', { length: 255 }).notNull(),
   phone: varchar('phone', { length: 50 }),
@@ -208,7 +208,7 @@ export const customers = pgTable('companies', {
 // 11. CUSTOMER_USERS Table
 export const customerUsers = pgTable('customer_users', {
   id: uuid('id').defaultRandom().primaryKey(),
-  customerId: uuid('company_id').references(() => customers.id, { onDelete: 'cascade' }).notNull(),
+  customerId: uuid('customer_id').references(() => customers.id, { onDelete: 'cascade' }).notNull(),
   branchId: uuid('branch_id').references(() => customerBranches.id, { onDelete: 'cascade' }),
   username: varchar('username', { length: 100 }).unique().notNull(),
   passwordHash: varchar('password_hash', { length: 255 }).notNull(),
@@ -221,7 +221,7 @@ export const customerUsers = pgTable('customer_users', {
 // 12. CUSTOMER_PRICING Table (Mapped to customer_price_overrides in database)
 export const customerPricing = pgTable('customer_price_overrides', {
   id: uuid('id').defaultRandom().primaryKey(),
-  customerId: uuid('company_id').references(() => customers.id, { onDelete: 'cascade' }).notNull(),
+  customerId: uuid('customer_id').references(() => customers.id, { onDelete: 'cascade' }).notNull(),
   variantId: uuid('variant_id').references(() => productVariants.id, { onDelete: 'cascade' }).notNull(),
   customPrice: numeric('custom_price', { precision: 12, scale: 2 }).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
@@ -230,7 +230,7 @@ export const customerPricing = pgTable('customer_price_overrides', {
 // 21. CUSTOMER_BRANCHES Table
 export const customerBranches = pgTable('customer_branches', {
   id: uuid('id').defaultRandom().primaryKey(),
-  customerId: uuid('company_id').references(() => customers.id, { onDelete: 'cascade' }).notNull(),
+  customerId: uuid('customer_id').references(() => customers.id, { onDelete: 'cascade' }).notNull(),
   branchName: varchar('branch_name', { length: 255 }).notNull(),
   branchCode: varchar('branch_code', { length: 50 }).notNull(),
   contactPerson: varchar('contact_person', { length: 255 }),
@@ -253,7 +253,7 @@ export const orderSources = pgTable('order_sources', {
 export const salesOrders = pgTable('sales_orders', {
   id: uuid('id').defaultRandom().primaryKey(),
   orderNumber: varchar('order_number', { length: 100 }).unique().notNull(),
-  customerId: uuid('company_id').references(() => customers.id, { onDelete: 'restrict' }).notNull(), // Map to company_id in DB
+  customerId: uuid('customer_id').references(() => customers.id, { onDelete: 'restrict' }).notNull(), // Map to customer_id in DB
   branchId: uuid('branch_id').references(() => customerBranches.id, { onDelete: 'restrict' }),
   sourceId: varchar('source_id', { length: 100 }).references(() => orderSources.id, { onDelete: 'restrict' }),
   createdBy: uuid('created_by').notNull(),
@@ -318,7 +318,7 @@ export const invoices = pgTable('invoice_metadata', {
 // 18. PAYMENT_REFERENCES Table
 export const paymentReferences = pgTable('payment_references', {
   id: uuid('id').defaultRandom().primaryKey(),
-  customerId: uuid('company_id').references(() => customers.id, { onDelete: 'restrict' }).notNull(), // Map to company_id column
+  customerId: uuid('customer_id').references(() => customers.id, { onDelete: 'restrict' }).notNull(), // Map to customer_id column
   invoiceId: uuid('invoice_id').references(() => invoices.id, { onDelete: 'restrict' }), // Map to invoice_id column
   paymentDate: timestamp('payment_date').notNull(),
   amount: numeric('amount', { precision: 12, scale: 2 }).notNull(),
@@ -337,7 +337,7 @@ export const paymentReferences = pgTable('payment_references', {
 // 19. CUSTOMER_LEDGER Table
 export const customerLedger = pgTable('customer_ledger', {
   id: uuid('id').defaultRandom().primaryKey(),
-  customerId: uuid('company_id').references(() => customers.id, { onDelete: 'restrict' }).notNull(), // Map to company_id column
+  customerId: uuid('customer_id').references(() => customers.id, { onDelete: 'restrict' }).notNull(), // Map to customer_id column
   date: timestamp('date').notNull(),
   referenceType: ledgerReferenceTypeEnum('reference_type').notNull(),
   referenceId: uuid('reference_id').notNull(),
@@ -351,7 +351,7 @@ export const customerLedger = pgTable('customer_ledger', {
 // 20. NOTIFICATIONS Table (Mapped to customer_notifications in database)
 export const notifications = pgTable('customer_notifications', {
   id: uuid('id').defaultRandom().primaryKey(),
-  customerId: uuid('company_id').references(() => customers.id, { onDelete: 'cascade' }).notNull(), // Map to company_id column
+  customerId: uuid('customer_id').references(() => customers.id, { onDelete: 'cascade' }).notNull(), // Map to customer_id column
   message: varchar('message', { length: 1000 }).notNull(),
   read: boolean('read').default(false).notNull(),
   type: varchar('type', { length: 100 }).notNull(),
@@ -379,7 +379,7 @@ export const customOrderItems = pgTable('custom_order_items', {
 export const returnRequests = pgTable('returns', {
   id: uuid('id').defaultRandom().primaryKey(),
   returnNumber: varchar('return_number', { length: 100 }).unique().notNull(),
-  customerId: uuid('company_id').references(() => customers.id, { onDelete: 'restrict' }).notNull(), // Map to company_id column
+  customerId: uuid('customer_id').references(() => customers.id, { onDelete: 'restrict' }).notNull(), // Map to customer_id column
   branchId: uuid('branch_id').references(() => customerBranches.id, { onDelete: 'restrict' }),
   orderId: uuid('order_id').references(() => salesOrders.id, { onDelete: 'set null' }),
   invoiceNumber: varchar('invoice_number', { length: 100 }),
@@ -757,7 +757,7 @@ export const orderActivityLogs = pgTable('order_activity_logs', {
 
 export const branchUsers = pgTable('customer_users', {
   id: uuid('id').defaultRandom().primaryKey(),
-  customerId: uuid('company_id').references(() => customers.id, { onDelete: 'cascade' }).notNull(),
+  customerId: uuid('customer_id').references(() => customers.id, { onDelete: 'cascade' }).notNull(),
   branchId: uuid('branch_id').references(() => customerBranches.id, { onDelete: 'cascade' }).notNull(),
   username: varchar('username', { length: 100 }).unique().notNull(),
   passwordHash: varchar('password_hash', { length: 255 }).notNull(),

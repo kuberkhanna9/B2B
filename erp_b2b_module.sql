@@ -94,11 +94,24 @@ END$$;
 ALTER TYPE public.user_role ADD VALUE IF NOT EXISTS 'B2B_CUSTOMER';
 
 -- =============================================================================
--- 2. CREATE B2B MODULE TABLES
+-- 2. EXTEND EXISTING ERP TABLES
+-- =============================================================================
+-- Safely extend the existing audit_logs table to keep a single unified timeline
+ALTER TABLE public.audit_logs ADD COLUMN IF NOT EXISTS username VARCHAR(100);
+ALTER TABLE public.audit_logs ADD COLUMN IF NOT EXISTS role VARCHAR(100);
+ALTER TABLE public.audit_logs ADD COLUMN IF NOT EXISTS entity VARCHAR(100);
+ALTER TABLE public.audit_logs ADD COLUMN IF NOT EXISTS entity_id UUID;
+ALTER TABLE public.audit_logs ADD COLUMN IF NOT EXISTS old_value TEXT;
+ALTER TABLE public.audit_logs ADD COLUMN IF NOT EXISTS new_value TEXT;
+ALTER TABLE public.audit_logs ADD COLUMN IF NOT EXISTS ip_address VARCHAR(50);
+ALTER TABLE public.audit_logs ADD COLUMN IF NOT EXISTS user_agent VARCHAR(255);
+
+-- =============================================================================
+-- 3. CREATE B2B MODULE TABLES
 -- =============================================================================
 
--- Companies (Replacing old customers concept)
-CREATE TABLE IF NOT EXISTS public.companies (
+-- Customers (Represents Corporate/Company profile)
+CREATE TABLE IF NOT EXISTS public.customers (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     company_name VARCHAR(255) NOT NULL,
     phone VARCHAR(50),
@@ -113,7 +126,7 @@ CREATE TABLE IF NOT EXISTS public.companies (
 -- Customer Branches
 CREATE TABLE IF NOT EXISTS public.customer_branches (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    company_id UUID NOT NULL REFERENCES public.companies(id) ON DELETE CASCADE,
+    customer_id UUID NOT NULL REFERENCES public.customers(id) ON DELETE CASCADE,
     branch_name VARCHAR(255) NOT NULL,
     branch_code VARCHAR(50) NOT NULL,
     contact_person VARCHAR(255),
@@ -129,7 +142,7 @@ CREATE TABLE IF NOT EXISTS public.customer_branches (
 -- Customer Users
 CREATE TABLE IF NOT EXISTS public.customer_users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    company_id UUID NOT NULL REFERENCES public.companies(id) ON DELETE CASCADE,
+    customer_id UUID NOT NULL REFERENCES public.customers(id) ON DELETE CASCADE,
     branch_id UUID REFERENCES public.customer_branches(id) ON DELETE CASCADE,
     username VARCHAR(100) NOT NULL UNIQUE,
     password_hash VARCHAR(255) NOT NULL,
@@ -144,7 +157,7 @@ CREATE TABLE IF NOT EXISTS public.sales_orders (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     order_number VARCHAR(100) NOT NULL UNIQUE,
     branch_id UUID NOT NULL REFERENCES public.customer_branches(id) ON DELETE RESTRICT,
-    company_id UUID NOT NULL REFERENCES public.companies(id) ON DELETE RESTRICT, -- Keep customerId field for compatibility
+    customer_id UUID NOT NULL REFERENCES public.customers(id) ON DELETE RESTRICT,
     created_by UUID NOT NULL REFERENCES public.customer_users(id) ON DELETE RESTRICT,
     status order_status DEFAULT 'PENDING_APPROVAL'::order_status NOT NULL,
     total_amount NUMERIC(12, 2) NOT NULL,
@@ -209,7 +222,7 @@ CREATE TABLE IF NOT EXISTS public.returns (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     return_number VARCHAR(100) NOT NULL UNIQUE,
     branch_id UUID NOT NULL REFERENCES public.customer_branches(id) ON DELETE RESTRICT,
-    company_id UUID NOT NULL REFERENCES public.companies(id) ON DELETE RESTRICT, -- Keep customerId field compatibility
+    customer_id UUID NOT NULL REFERENCES public.customers(id) ON DELETE RESTRICT,
     order_id UUID REFERENCES public.sales_orders(id) ON DELETE SET NULL,
     invoice_number VARCHAR(100),
     status return_status DEFAULT 'PENDING'::return_status NOT NULL,
@@ -229,7 +242,7 @@ CREATE TABLE IF NOT EXISTS public.return_items (
     quantity INTEGER NOT NULL CHECK (quantity > 0)
 );
 
--- Return Attachments (for upload evidence)
+-- Return Attachments
 CREATE TABLE IF NOT EXISTS public.return_attachments (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     return_id UUID NOT NULL REFERENCES public.returns(id) ON DELETE CASCADE,
@@ -237,7 +250,7 @@ CREATE TABLE IF NOT EXISTS public.return_attachments (
     created_at TIMESTAMPTZ DEFAULT now() NOT NULL
 );
 
--- Claims (Images of items)
+-- Claims
 CREATE TABLE IF NOT EXISTS public.claims (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     return_id UUID NOT NULL REFERENCES public.returns(id) ON DELETE CASCADE,
@@ -252,7 +265,7 @@ CREATE TABLE IF NOT EXISTS public.claims (
 -- Claim Attachments
 CREATE TABLE IF NOT EXISTS public.claim_attachments (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    return_id UUID NOT NULL REFERENCES public.returns(id) ON DELETE CASCADE, -- Map to returnClaimAttachments relations
+    return_id UUID NOT NULL REFERENCES public.returns(id) ON DELETE CASCADE,
     file_url VARCHAR(1000) NOT NULL,
     file_name VARCHAR(255) NOT NULL,
     file_type VARCHAR(100) NOT NULL,
@@ -273,7 +286,7 @@ CREATE TABLE IF NOT EXISTS public.return_resolutions (
 -- Payment References
 CREATE TABLE IF NOT EXISTS public.payment_references (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    company_id UUID NOT NULL REFERENCES public.companies(id) ON DELETE RESTRICT,
+    customer_id UUID NOT NULL REFERENCES public.customers(id) ON DELETE RESTRICT,
     invoice_id UUID REFERENCES public.invoice_metadata(id) ON DELETE RESTRICT,
     payment_date TIMESTAMPTZ NOT NULL,
     amount NUMERIC(12, 2) NOT NULL,
@@ -289,10 +302,10 @@ CREATE TABLE IF NOT EXISTS public.payment_references (
     created_at TIMESTAMPTZ DEFAULT now() NOT NULL
 );
 
--- Customer Price Overrides (Replacing customer_pricing)
+-- Customer Price Overrides
 CREATE TABLE IF NOT EXISTS public.customer_price_overrides (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    company_id UUID NOT NULL REFERENCES public.companies(id) ON DELETE CASCADE,
+    customer_id UUID NOT NULL REFERENCES public.customers(id) ON DELETE CASCADE,
     variant_id UUID NOT NULL REFERENCES public.product_variants(id) ON DELETE CASCADE,
     custom_price NUMERIC(12, 2) NOT NULL CHECK (custom_price >= 0),
     created_at TIMESTAMPTZ DEFAULT now() NOT NULL
@@ -301,7 +314,7 @@ CREATE TABLE IF NOT EXISTS public.customer_price_overrides (
 -- Customer Notifications
 CREATE TABLE IF NOT EXISTS public.customer_notifications (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    company_id UUID NOT NULL REFERENCES public.companies(id) ON DELETE CASCADE,
+    customer_id UUID NOT NULL REFERENCES public.customers(id) ON DELETE CASCADE,
     message VARCHAR(1000) NOT NULL,
     read BOOLEAN DEFAULT FALSE NOT NULL,
     type VARCHAR(100) NOT NULL,
@@ -318,27 +331,10 @@ CREATE TABLE IF NOT EXISTS public.order_activity_logs (
     created_at TIMESTAMPTZ DEFAULT now() NOT NULL
 );
 
--- B2B Audit Logs (Independent from warehouse audit logs)
-CREATE TABLE IF NOT EXISTS public.b2b_audit_logs (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    action VARCHAR(255) NOT NULL,
-    module VARCHAR(100) NOT NULL,
-    description VARCHAR(1000) NOT NULL,
-    entity VARCHAR(100) NOT NULL,
-    entity_id UUID,
-    username VARCHAR(100),
-    role VARCHAR(100),
-    old_value TEXT,
-    new_value TEXT,
-    ip_address VARCHAR(50),
-    user_agent VARCHAR(255),
-    created_at TIMESTAMPTZ DEFAULT now() NOT NULL
-);
-
 -- Customer Ledger
 CREATE TABLE IF NOT EXISTS public.customer_ledger (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    company_id UUID NOT NULL REFERENCES public.companies(id) ON DELETE RESTRICT,
+    customer_id UUID NOT NULL REFERENCES public.customers(id) ON DELETE RESTRICT,
     date TIMESTAMPTZ NOT NULL,
     reference_type ledger_reference_type NOT NULL,
     reference_id UUID NOT NULL,
@@ -394,7 +390,7 @@ CREATE TABLE IF NOT EXISTS public.user_roles (
 );
 
 -- =============================================================================
--- 3. CREATE STOCK POSITION AVAILABILITY VIEW
+-- 4. CREATE STOCK POSITION VIEW
 -- =============================================================================
 CREATE OR REPLACE VIEW public.inventory_availability WITH (security_invoker = true) AS
 WITH physical AS (
@@ -436,15 +432,15 @@ LEFT JOIN physical p ON p.variant_id = v.id
 LEFT JOIN reserved r ON r.variant_id = v.id;
 
 -- =============================================================================
--- 4. CREATE INDEXES (Only if they do not already exist)
+-- 5. CREATE INDEXES
 -- =============================================================================
-CREATE INDEX IF NOT EXISTS idx_companies_status ON public.companies(status);
-CREATE INDEX IF NOT EXISTS idx_branches_company ON public.customer_branches(company_id);
+CREATE INDEX IF NOT EXISTS idx_customers_status ON public.customers(status);
+CREATE INDEX IF NOT EXISTS idx_branches_customer ON public.customer_branches(customer_id);
 CREATE INDEX IF NOT EXISTS idx_branches_status ON public.customer_branches(status);
-CREATE INDEX IF NOT EXISTS idx_cusers_company ON public.customer_users(company_id);
+CREATE INDEX IF NOT EXISTS idx_cusers_customer ON public.customer_users(customer_id);
 CREATE INDEX IF NOT EXISTS idx_cusers_branch ON public.customer_users(branch_id);
 CREATE INDEX IF NOT EXISTS idx_sales_orders_branch ON public.sales_orders(branch_id);
-CREATE INDEX IF NOT EXISTS idx_sales_orders_company ON public.sales_orders(company_id);
+CREATE INDEX IF NOT EXISTS idx_sales_orders_customer ON public.sales_orders(customer_id);
 CREATE INDEX IF NOT EXISTS idx_sales_orders_status ON public.sales_orders(status);
 CREATE INDEX IF NOT EXISTS idx_sales_orders_created_at ON public.sales_orders(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_sales_order_items_order ON public.sales_order_items(order_id);
@@ -455,29 +451,28 @@ CREATE INDEX IF NOT EXISTS idx_dispatch_items_variant ON public.dispatch_items(v
 CREATE INDEX IF NOT EXISTS idx_invoice_order ON public.invoice_metadata(order_id);
 CREATE INDEX IF NOT EXISTS idx_invoice_status ON public.invoice_metadata(status);
 CREATE INDEX IF NOT EXISTS idx_returns_branch ON public.returns(branch_id);
-CREATE INDEX IF NOT EXISTS idx_returns_company ON public.returns(company_id);
+CREATE INDEX IF NOT EXISTS idx_returns_customer ON public.returns(customer_id);
 CREATE INDEX IF NOT EXISTS idx_returns_status ON public.returns(status);
 CREATE INDEX IF NOT EXISTS idx_returns_created_at ON public.returns(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_return_items_return ON public.return_items(return_id);
 CREATE INDEX IF NOT EXISTS idx_return_items_variant ON public.return_items(variant_id);
 CREATE INDEX IF NOT EXISTS idx_claims_return ON public.claims(return_id);
 CREATE INDEX IF NOT EXISTS idx_claim_attachments_return ON public.claim_attachments(return_id);
-CREATE INDEX IF NOT EXISTS idx_payments_company ON public.payment_references(company_id);
+CREATE INDEX IF NOT EXISTS idx_payments_customer ON public.payment_references(customer_id);
 CREATE INDEX IF NOT EXISTS idx_payments_invoice ON public.payment_references(invoice_id);
 CREATE INDEX IF NOT EXISTS idx_payments_status ON public.payment_references(status);
-CREATE INDEX IF NOT EXISTS idx_price_overrides_company ON public.customer_price_overrides(company_id);
+CREATE INDEX IF NOT EXISTS idx_price_overrides_customer ON public.customer_price_overrides(customer_id);
 CREATE INDEX IF NOT EXISTS idx_price_overrides_variant ON public.customer_price_overrides(variant_id);
-CREATE INDEX IF NOT EXISTS idx_notifications_company ON public.customer_notifications(company_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_customer ON public.customer_notifications(customer_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON public.customer_notifications(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_order_logs_order ON public.order_activity_logs(order_id);
-CREATE INDEX IF NOT EXISTS idx_b2b_audit_logs_created_at ON public.b2b_audit_logs(created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_ledger_company ON public.customer_ledger(company_id);
+CREATE INDEX IF NOT EXISTS idx_ledger_customer ON public.customer_ledger(customer_id);
 CREATE INDEX IF NOT EXISTS idx_ledger_created_at ON public.customer_ledger(created_at DESC);
 
 -- =============================================================================
--- 5. ROW LEVEL SECURITY (RLS) POLICIES
+-- 6. ROW LEVEL SECURITY (RLS) POLICIES
 -- =============================================================================
-ALTER TABLE public.companies ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.customers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.customer_branches ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.customer_users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sales_orders ENABLE ROW LEVEL SECURITY;
@@ -493,12 +488,11 @@ ALTER TABLE public.payment_references ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.customer_price_overrides ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.customer_notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.order_activity_logs ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.b2b_audit_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.customer_ledger ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.custom_order_items ENABLE ROW LEVEL SECURITY;
 
 -- Enable public select access for all authenticated roles on B2B
-CREATE POLICY "Allow authenticated read on companies" ON public.companies FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Allow authenticated read on customers" ON public.customers FOR SELECT TO authenticated USING (true);
 CREATE POLICY "Allow authenticated read on customer_branches" ON public.customer_branches FOR SELECT TO authenticated USING (true);
 CREATE POLICY "Allow authenticated read on customer_users" ON public.customer_users FOR SELECT TO authenticated USING (true);
 CREATE POLICY "Allow authenticated read on sales_orders" ON public.sales_orders FOR SELECT TO authenticated USING (true);
@@ -518,7 +512,7 @@ CREATE POLICY "Allow authenticated read on customer_ledger" ON public.customer_l
 CREATE POLICY "Allow authenticated read on custom_order_items" ON public.custom_order_items FOR SELECT TO authenticated USING (true);
 
 -- Allow full write permission for database clients / backend API
-CREATE POLICY "Allow full write on companies" ON public.companies FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Allow full write on customers" ON public.customers FOR ALL TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "Allow full write on customer_branches" ON public.customer_branches FOR ALL TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "Allow full write on customer_users" ON public.customer_users FOR ALL TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "Allow full write on sales_orders" ON public.sales_orders FOR ALL TO authenticated USING (true) WITH CHECK (true);
@@ -536,4 +530,3 @@ CREATE POLICY "Allow full write on customer_notifications" ON public.customer_no
 CREATE POLICY "Allow full write on order_activity_logs" ON public.order_activity_logs FOR ALL TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "Allow full write on customer_ledger" ON public.customer_ledger FOR ALL TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "Allow full write on custom_order_items" ON public.custom_order_items FOR ALL TO authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "Allow full write on b2b_audit_logs" ON public.b2b_audit_logs FOR ALL TO authenticated USING (true) WITH CHECK (true);
