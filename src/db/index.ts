@@ -7,6 +7,9 @@ let connectionString = process.env.DATABASE_URL;
 if (!connectionString && process.env.POSTGRES_URL) {
   connectionString = process.env.POSTGRES_URL;
 }
+if (!connectionString && process.env.POSTGRES_PRISMA_URL) {
+  connectionString = process.env.POSTGRES_PRISMA_URL;
+}
 
 const isBuilding = process.env.NEXT_PHASE === 'phase-production-build' || process.env.NEXT_PHASE === 'phase-export' || process.env.NEXT_PHASE?.includes('build');
 
@@ -20,6 +23,7 @@ if (!connectionString) {
   }
 }
 
+// Ensure prefetch is disabled for transactions compatibility (e.g., Supabase transaction pooling mode)
 const client = (isBuilding && !connectionString) ? null : postgres(connectionString!, { prepare: false });
 
-export const db = (client ? drizzle(client, { schema }) : null) as ReturnType<typeof drizzle<typeof schema>> | null;
+export const db = client ? drizzle(client, { schema }) : (null as any);

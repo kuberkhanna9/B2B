@@ -1,5 +1,5 @@
 import { db as rawDb } from '@/db';
-const db = rawDb as NonNullable<typeof rawDb>;
+const db = rawDb!;
 import * as schema from '@/db/schema';
 import { eq, and, or, desc, inArray, sum, sql } from 'drizzle-orm';
 import { 
@@ -69,8 +69,22 @@ async function db_logB2BAuditDetailed(
       }
     }
 
+    // Filter out client side IDs (customerUsers/branchUsers IDs) that do not exist in profiles table to prevent FK constraint violations
+    const isValidProfileId = finalUserId && 
+      finalUserId.length === 36 && 
+      !finalUserId.startsWith('cust-') &&
+      !finalUserId.startsWith('br-') &&
+      // Predefined system profiles start with 'b1100000-'
+      (finalUserId.startsWith('b1100000-') || 
+       // Only allow genuine admin profile UUIDs if verified, otherwise set to null and rely on username/role columns
+       finalRole === 'SUPERADMIN' || 
+       finalRole === 'ACCOUNTS_DEPARTMENT' || 
+       finalRole === 'ACCOUNTS' ||
+       finalRole === 'INVENTORY_DEPARTMENT' ||
+       finalRole === 'INVENTORY');
+
     await db.insert(schema.auditLogs).values({
-      userId: finalUserId && !finalUserId.startsWith('cust-') && finalUserId.length === 36 ? finalUserId : null,
+      userId: isValidProfileId ? finalUserId : null,
       username: finalUsername || null,
       role: finalRole || null,
       entity: entity || null,
@@ -104,41 +118,57 @@ async function db_logB2BAudit(
 // CUSTOMER MANAGEMENT (SUPERADMIN ONLY)
 // =============================================================================
 async function db_getCustomers(): Promise<Customer[]> {
-  const res = await db.select().from(schema.customers).orderBy(desc(schema.customers.createdAt));
-  return res.map(c => ({
-    id: c.id,
-    companyName: c.companyName,
-    phone: c.phone || undefined,
-    email: c.email || undefined,
-    billingAddress: c.billingAddress || undefined,
-    shippingAddress: c.shippingAddress || undefined,
-    active: c.active,
-    createdAt: c.createdAt.toISOString()
-  }));
+  try {
+    const res = await db.select().from(schema.customers).orderBy(desc(schema.customers.createdAt));
+    return res.map(c => ({
+      id: c.id,
+      companyName: c.companyName,
+      phone: c.phone || undefined,
+      email: c.email || undefined,
+      billingAddress: c.billingAddress || undefined,
+      shippingAddress: c.shippingAddress || undefined,
+      active: c.active,
+      createdAt: c.createdAt ? c.createdAt.toISOString() : new Date().toISOString()
+    }));
+  } catch (err) {
+    console.error('Failed to query customers:', err);
+    return [];
+  }
 }
 
 async function db_createCustomer(data: Omit<Customer, 'id' | 'createdAt' | 'active'>): Promise<Customer> {
-  const res = await db.insert(schema.customers).values({
-    companyName: data.companyName,
-    phone: data.phone || null,
-    email: data.email || null,
-    billingAddress: data.billingAddress || null,
-    shippingAddress: data.shippingAddress || null
-  }).returning();
+  try {
+    const res = await db.insert(schema.customers).values({
+      companyName: data.companyName,
+      phone: data.phone || null,
+      email: data.email || null,
+      billingAddress: data.billingAddress || null,
+      shippingAddress: data.shippingAddress || null
+    }).returning();
 
-  const c = res[0];
-  await logB2BAudit(null, 'CUSTOMER_CREATE', 'B2B_CUSTOMERS', `Registered wholesale customer company "${c.companyName}"`);
-  
-  return {
-    id: c.id,
-    companyName: c.companyName,
-    phone: c.phone || undefined,
-    email: c.email || undefined,
-    billingAddress: c.billingAddress || undefined,
-    shippingAddress: c.shippingAddress || undefined,
-    active: c.active,
-    createdAt: c.createdAt.toISOString()
-  };
+    const c = res[0];
+    await logB2BAudit(null, 'CUSTOMER_CREATE', 'B2B_CUSTOMERS', `Registered wholesale customer company "${c.companyName}"`);
+    
+    return {
+      id: c.id,
+      companyName: c.companyName,
+      phone: c.phone || undefined,
+      email: c.email || undefined,
+      billingAddress: c.billingAddress || undefined,
+      shippingAddress: c.shippingAddress || undefined,
+      active: c.active,
+      createdAt: c.createdAt.toISOString()
+    };
+  } catch (err: any) {
+    console.error('================ EXPLICIT POSTGRES DB INSERT ERROR ===============');
+    console.error('Error Code:', err?.code);
+    console.error('Error Message:', err?.message);
+    console.error('Error Cause:', err?.cause || err);
+    console.error('Error Detail:', err?.detail);
+    console.error('Error Constraint:', err?.constraint);
+    console.error('==================================================================');
+    throw err;
+  }
 }
 
 async function db_updateCustomer(id: string, data: Partial<Omit<Customer, 'id' | 'createdAt'>>): Promise<boolean> {
@@ -159,18 +189,23 @@ async function db_updateCustomer(id: string, data: Partial<Omit<Customer, 'id' |
 // CUSTOMER USER CREDENTIALS (SUPERADMIN ONLY)
 // =============================================================================
 async function db_getCustomerUsers(customerId?: string): Promise<CustomerUser[]> {
-  const res = customerId
-    ? await db.select().from(schema.customerUsers).where(eq(schema.customerUsers.customerId, customerId))
-    : await db.select().from(schema.customerUsers);
-  return res.map(u => ({
-    id: u.id,
-    customerId: u.customerId,
-    username: u.username,
-    fullName: u.fullName,
-    email: u.email || undefined,
-    active: u.active,
-    createdAt: u.createdAt.toISOString()
-  }));
+  try {
+    const res = customerId
+      ? await db.select().from(schema.customerUsers).where(eq(schema.customerUsers.customerId, customerId))
+      : await db.select().from(schema.customerUsers);
+    return res.map(u => ({
+      id: u.id,
+      customerId: u.customerId,
+      username: u.username,
+      fullName: u.fullName,
+      email: u.email || undefined,
+      active: u.active,
+      createdAt: u.createdAt ? u.createdAt.toISOString() : new Date().toISOString()
+    }));
+  } catch (err) {
+    console.error('Failed to query customer users:', err);
+    return [];
+  }
 }
 
 async function db_createCustomerUser(
@@ -236,6 +271,13 @@ async function db_createBranchUser(
   }).returning();
 
   const u = res[0];
+  
+  // Also insert the initial branch mapping into the many-to-many customer_user_branches junction table
+  await db.insert(schema.customerUserBranches).values({
+    userId: u.id,
+    branchId: u.branchId
+  }).catch(() => null);
+
   const branchUserRole = await db.select().from(schema.roles).where(eq(schema.roles.name, 'CLIENT_BRANCH_USER')).limit(1);
   if (branchUserRole.length > 0) {
     await db.insert(schema.userRoles).values({
@@ -244,7 +286,7 @@ async function db_createBranchUser(
     });
   }
 
-  await logB2BAudit(null, 'BRANCH_USER_CREATE', 'B2B_USERS', `Created branch user portal login for "${u.fullName}" (${u.username})`);
+  await logB2BAudit(null, 'BRANCH_USER_CREATE', 'B2B_USERS', `Created branch user portal login for "${u.fullName}" (${u.username}) and assigned branch ID: ${u.branchId}`);
 
   return {
     id: u.id,
@@ -267,7 +309,17 @@ async function db_updateBranchUser(userId: string, data: any) {
   if (data.branchId !== undefined) updateData.branchId = data.branchId;
 
   await db.update(schema.branchUsers).set(updateData).where(eq(schema.branchUsers.id, userId));
-  await logB2BAudit(null, 'BRANCH_USER_UPDATE', 'B2B_USERS', `Updated branch user portal login for ID: ${userId}`);
+
+  if (data.branchId !== undefined) {
+    // Delete existing junction mappings and insert the updated branchId assignment
+    await db.delete(schema.customerUserBranches).where(eq(schema.customerUserBranches.userId, userId)).catch(() => null);
+    await db.insert(schema.customerUserBranches).values({
+      userId,
+      branchId: data.branchId
+    }).catch(() => null);
+  }
+
+  await logB2BAudit(null, 'BRANCH_USER_UPDATE', 'B2B_USERS', `Updated branch user portal login for ID: ${userId} and assigned branch ID: ${data.branchId}`);
   return true;
 }
 
@@ -339,81 +391,89 @@ export interface CatalogProduct {
   }[];
 }
 
-async function db_getB2BCatalog(customerId?: string): Promise<CatalogProduct[]> {
-  const { getSession } = await import('./session');
-  const session = await getSession();
-  if (session) {
-    if (session.role === 'CLIENT_BRANCH_USER' || session.role === 'CLIENT_ADMIN') {
-      customerId = session.customerId;
+async function db_getB2BCatalog(targetCustomerId?: string): Promise<CatalogProduct[]> {
+  try {
+    const { getSession } = await import('./session');
+    const session = await getSession();
+
+    let customerId = targetCustomerId;
+    if (session) {
+      if (session.role === 'CLIENT_BRANCH_USER' || session.role === 'CLIENT_ADMIN') {
+        customerId = session.customerId;
+      }
     }
-  }
 
-  // 1. Fetch available stock precomputed from database view
-  const availabilityList = await db.select().from(schema.inventoryAvailability);
+    // 1. Fetch available stock precomputed from database view
+    const availabilityList = await db.select().from(schema.inventoryAvailability).catch(() => []);
 
-  // 2. Fetch customer specific pricing overrides
-  const pricingMap: Record<string, number> = {};
-  if (customerId) {
-    const customPricing = await db.select()
-      .from(schema.customerPricing)
-      .where(eq(schema.customerPricing.customerId, customerId));
-    for (const p of customPricing) {
-      pricingMap[p.variantId] = Number(p.customPrice);
+    // 2. Fetch customer specific pricing overrides
+    const pricingMap: Record<string, number> = {};
+    if (customerId) {
+      const customPricing = await db.select()
+        .from(schema.customerPricing)
+        .where(eq(schema.customerPricing.customerId, customerId))
+        .catch(() => []);
+      for (const p of customPricing) {
+        pricingMap[p.variantId] = Number(p.customPrice);
+      }
     }
+
+    // 3. Load products, colors, sizes, variants
+    const productsList = await db.select().from(schema.products).where(eq(schema.products.active, true)).catch(() => []);
+    const colorsList = await db.select().from(schema.productColors).catch(() => []);
+    const sizesList = await db.select().from(schema.productSizes).catch(() => []);
+    const variantsList = await db.select().from(schema.productVariants).where(eq(schema.productVariants.active, true)).catch(() => []);
+
+    const catalog: CatalogProduct[] = [];
+
+    for (const p of productsList) {
+      const productVariantsFiltered = variantsList.filter(v => v.productId === p.id);
+      if (productVariantsFiltered.length === 0) continue;
+
+      const variantsData = productVariantsFiltered.map(v => {
+        const colorObj = colorsList.find(c => c.id === (v as any).colorId || c.colorName === (v as any).color);
+        const sizeObj = sizesList.find(s => s.id === (v as any).sizeId || s.sizeName === (v as any).size);
+        
+        const stockInfo = availabilityList.find(a => a.variantId === v.id);
+        const physical = stockInfo ? stockInfo.physicalStock : 0;
+        const reserved = stockInfo ? stockInfo.reservedStock : 0;
+        const available = stockInfo ? stockInfo.availableStock : 0;
+
+        const mrp = Number(v.mrp);
+        const standardWholesale = Number(v.wholesalePrice);
+        const customPrice = pricingMap[v.id] !== undefined ? pricingMap[v.id] : standardWholesale;
+
+        return {
+          variantId: v.id,
+          sku: v.sku,
+          barcode: v.sku,
+          colorName: colorObj ? colorObj.colorName : (v as any).color || 'Default',
+          sizeName: sizeObj ? sizeObj.sizeName : (v as any).size || 'Default',
+          physicalStock: physical,
+          reservedStock: reserved,
+          availableStock: available,
+          standardWholesalePrice: standardWholesale,
+          customerPrice: customPrice,
+          mrp,
+          rackLocation: v.rackLocation || undefined
+        };
+      });
+
+      catalog.push({
+        productId: p.id,
+        productName: p.productName,
+        category: p.category,
+        description: p.description || undefined,
+        active: p.active,
+        variants: variantsData
+      });
+    }
+
+    return catalog;
+  } catch (err) {
+    console.error('Failed to query B2B catalog:', err);
+    return [];
   }
-
-  // 3. Load products, colors, sizes, variants
-  const productsList = await db.select().from(schema.products).where(eq(schema.products.active, true));
-  const colorsList = await db.select().from(schema.productColors);
-  const sizesList = await db.select().from(schema.productSizes);
-  const variantsList = await db.select().from(schema.productVariants).where(eq(schema.productVariants.active, true));
-
-  const catalog: CatalogProduct[] = [];
-
-  for (const p of productsList) {
-    const productVariantsFiltered = variantsList.filter(v => v.productId === p.id);
-    if (productVariantsFiltered.length === 0) continue;
-
-    const variantsData = productVariantsFiltered.map(v => {
-      const colorObj = colorsList.find(c => c.id === v.colorId);
-      const sizeObj = sizesList.find(s => s.id === v.sizeId);
-      
-      const stockInfo = availabilityList.find(a => a.variantId === v.id);
-      const physical = stockInfo ? stockInfo.physicalStock : 0;
-      const reserved = stockInfo ? stockInfo.reservedStock : 0;
-      const available = stockInfo ? stockInfo.availableStock : 0;
-
-      const mrp = Number(v.mrp);
-      const standardWholesale = Number(v.wholesalePrice);
-      const customPrice = pricingMap[v.id] !== undefined ? pricingMap[v.id] : standardWholesale;
-
-      return {
-        variantId: v.id,
-        sku: v.sku,
-        barcode: v.sku,
-        colorName: colorObj ? colorObj.colorName : 'Unknown',
-        sizeName: sizeObj ? sizeObj.sizeName : 'Unknown',
-        physicalStock: physical,
-        reservedStock: reserved,
-        availableStock: available,
-        standardWholesalePrice: standardWholesale,
-        customerPrice: customPrice,
-        mrp,
-        rackLocation: v.rackLocation || undefined
-      };
-    });
-
-    catalog.push({
-      productId: p.id,
-      productName: p.productName,
-      category: p.category,
-      description: p.description || undefined,
-      active: p.active,
-      variants: variantsData
-    });
-  }
-
-  return catalog;
 }
 
 // =============================================================================
@@ -460,58 +520,63 @@ async function db_markNotificationsAsRead(customerId: string): Promise<boolean> 
 // SALES ORDERING SYSTEM
 // =============================================================================
 async function db_getSalesOrders(customerId?: string): Promise<SalesOrder[]> {
-  const { getSession } = await import('./session');
-  const session = await getSession();
+  try {
+    const { getSession } = await import('./session');
+    const session = await getSession();
 
-  let q = db.select({
-    id: schema.salesOrders.id,
-    orderNumber: schema.salesOrders.orderNumber,
-    customerId: schema.salesOrders.customerId,
-    createdBy: schema.salesOrders.createdBy,
-    status: schema.salesOrders.status,
-    totalAmount: schema.salesOrders.totalAmount,
-    remarks: schema.salesOrders.remarks,
-    approvedBy: schema.salesOrders.approvedBy,
-    approvedAt: schema.salesOrders.approvedAt,
-    createdAt: schema.salesOrders.createdAt,
-    companyName: schema.customers.companyName
-  })
-  .from(schema.salesOrders)
-  .innerJoin(schema.customers, eq(schema.salesOrders.customerId, schema.customers.id))
-  .orderBy(desc(schema.salesOrders.createdAt));
+    let q = db.select({
+      id: schema.salesOrders.id,
+      orderNumber: schema.salesOrders.orderNumber,
+      customerId: schema.salesOrders.customerId,
+      createdBy: schema.salesOrders.createdBy,
+      status: schema.salesOrders.status,
+      totalAmount: schema.salesOrders.totalAmount,
+      remarks: schema.salesOrders.remarks,
+      approvedBy: schema.salesOrders.approvedBy,
+      approvedAt: schema.salesOrders.approvedAt,
+      createdAt: schema.salesOrders.createdAt,
+      companyName: schema.customers.companyName
+    })
+    .from(schema.salesOrders)
+    .innerJoin(schema.customers, eq(schema.salesOrders.customerId, schema.customers.id))
+    .orderBy(desc(schema.salesOrders.createdAt));
 
-  let filterConditions = [];
-  if (session) {
-    if (session.role === 'CLIENT_BRANCH_USER') {
-      filterConditions.push(eq(schema.salesOrders.customerId, session.customerId || ''));
-      filterConditions.push(eq(schema.salesOrders.branchId, session.branchId || ''));
-    } else if (session.role === 'CLIENT_ADMIN') {
-      filterConditions.push(eq(schema.salesOrders.customerId, session.customerId || ''));
+    let filterConditions = [];
+    if (session) {
+      if (session.role === 'CLIENT_BRANCH_USER') {
+        filterConditions.push(eq(schema.salesOrders.customerId, session.customerId || ''));
+        filterConditions.push(eq(schema.salesOrders.branchId, session.branchId || ''));
+      } else if (session.role === 'CLIENT_ADMIN') {
+        filterConditions.push(eq(schema.salesOrders.customerId, session.customerId || ''));
+      } else if (customerId) {
+        filterConditions.push(eq(schema.salesOrders.customerId, customerId));
+      }
     } else if (customerId) {
       filterConditions.push(eq(schema.salesOrders.customerId, customerId));
     }
-  } else if (customerId) {
-    filterConditions.push(eq(schema.salesOrders.customerId, customerId));
-  }
 
-  if (filterConditions.length > 0) {
-    q = q.where(and(...filterConditions)) as any;
-  }
+    if (filterConditions.length > 0) {
+      q = q.where(and(...filterConditions)) as any;
+    }
 
-  const res = await q;
-  return res.map(o => ({
-    id: o.id,
-    orderNumber: o.orderNumber,
-    customerId: o.customerId,
-    createdBy: o.createdBy,
-    status: o.status as any,
-    totalAmount: Number(o.totalAmount),
-    remarks: o.remarks || undefined,
-    approvedBy: o.approvedBy || undefined,
-    approvedAt: o.approvedAt?.toISOString() || undefined,
-    createdAt: o.createdAt.toISOString(),
-    companyName: o.companyName
-  }));
+    const res = await q;
+    return res.map(o => ({
+      id: o.id,
+      orderNumber: o.orderNumber,
+      customerId: o.customerId,
+      createdBy: o.createdBy,
+      status: o.status as any,
+      totalAmount: Number(o.totalAmount),
+      remarks: o.remarks || undefined,
+      approvedBy: o.approvedBy || undefined,
+      approvedAt: o.approvedAt?.toISOString() || undefined,
+      createdAt: o.createdAt ? o.createdAt.toISOString() : new Date().toISOString(),
+      companyName: o.companyName
+    }));
+  } catch (err) {
+    console.error('Failed to query sales orders:', err);
+    return [];
+  }
 }
 
 async function db_getSalesOrderDetails(orderId: string): Promise<{ order: SalesOrder; items: SalesOrderItem[] } | null> {
@@ -571,8 +636,8 @@ async function db_getSalesOrderDetails(orderId: string): Promise<{ order: SalesO
   .from(schema.salesOrderItems)
   .innerJoin(schema.productVariants, eq(schema.salesOrderItems.variantId, schema.productVariants.id))
   .innerJoin(schema.products, eq(schema.productVariants.productId, schema.products.id))
-  .innerJoin(schema.productColors, eq(schema.productVariants.colorId, schema.productColors.id))
-  .innerJoin(schema.productSizes, eq(schema.productVariants.sizeId, schema.productSizes.id))
+  .leftJoin(schema.productColors, eq(schema.productVariants.colorId, schema.productColors.id))
+  .leftJoin(schema.productSizes, eq(schema.productVariants.sizeId, schema.productSizes.id))
   .where(eq(schema.salesOrderItems.orderId, orderId));
 
   const order: SalesOrder = {
@@ -615,7 +680,27 @@ async function db_getSalesOrderDetails(orderId: string): Promise<{ order: SalesO
     availableStock: stockMap[i.variantId] || 0
   }));
 
-  return { order, items };
+  const customItemsRes = await db.select()
+    .from(schema.customOrderItems)
+    .where(eq(schema.customOrderItems.orderId, orderId));
+
+  const customItems: CustomOrderItem[] = customItemsRes.map(c => ({
+    id: c.id,
+    orderId: c.orderId,
+    itemName: c.itemName,
+    description: c.description || undefined,
+    quantity: c.quantity,
+    wsp: Number(c.wsp),
+    mrp: Number(c.mrp),
+    gstPercent: Number(c.gstPercent),
+    hsnCode: c.hsnCode || undefined,
+    remarks: c.remarks || undefined,
+    imageUrl: c.imageUrl || undefined,
+    convertedVariantId: c.convertedVariantId || undefined,
+    createdAt: c.createdAt.toISOString()
+  }));
+
+  return { order, items, customItems };
 }
 
 async function db_createSalesOrder(
@@ -866,56 +951,61 @@ async function db_rejectSalesOrder(orderId: string, adminProfileId: string): Pro
 // DISPATCH MANAGEMENT (INVENTORY DEPT)
 // =============================================================================
 async function db_getDispatches(customerId?: string): Promise<Dispatch[]> {
-  const { getSession } = await import('./session');
-  const session = await getSession();
+  try {
+    const { getSession } = await import('./session');
+    const session = await getSession();
 
-  let q = db.select({
-    id: schema.dispatches.id,
-    orderId: schema.dispatches.orderId,
-    dispatchNumber: schema.dispatches.dispatchNumber,
-    courier: schema.dispatches.courier,
-    trackingNumber: schema.dispatches.trackingNumber,
-    dispatchDate: schema.dispatches.dispatchDate,
-    remarks: schema.dispatches.remarks,
-    createdBy: schema.dispatches.createdBy,
-    createdAt: schema.dispatches.createdAt,
-    orderNumber: schema.salesOrders.orderNumber
-  })
-  .from(schema.dispatches)
-  .innerJoin(schema.salesOrders, eq(schema.dispatches.orderId, schema.salesOrders.id))
-  .orderBy(desc(schema.dispatches.createdAt));
+    let q = db.select({
+      id: schema.dispatches.id,
+      orderId: schema.dispatches.orderId,
+      dispatchNumber: schema.dispatches.dispatchNumber,
+      courier: schema.dispatches.courier,
+      trackingNumber: schema.dispatches.trackingNumber,
+      dispatchDate: schema.dispatches.dispatchDate,
+      remarks: schema.dispatches.remarks,
+      createdBy: schema.dispatches.createdBy,
+      createdAt: schema.dispatches.createdAt,
+      orderNumber: schema.salesOrders.orderNumber
+    })
+    .from(schema.dispatches)
+    .innerJoin(schema.salesOrders, eq(schema.dispatches.orderId, schema.salesOrders.id))
+    .orderBy(desc(schema.dispatches.createdAt));
 
-  let filterConditions = [];
-  if (session) {
-    if (session.role === 'CLIENT_BRANCH_USER') {
-      filterConditions.push(eq(schema.salesOrders.customerId, session.customerId || ''));
-      filterConditions.push(eq(schema.salesOrders.branchId, session.branchId || ''));
-    } else if (session.role === 'CLIENT_ADMIN') {
-      filterConditions.push(eq(schema.salesOrders.customerId, session.customerId || ''));
+    let filterConditions = [];
+    if (session) {
+      if (session.role === 'CLIENT_BRANCH_USER') {
+        filterConditions.push(eq(schema.salesOrders.customerId, session.customerId || ''));
+        filterConditions.push(eq(schema.salesOrders.branchId, session.branchId || ''));
+      } else if (session.role === 'CLIENT_ADMIN') {
+        filterConditions.push(eq(schema.salesOrders.customerId, session.customerId || ''));
+      } else if (customerId) {
+        filterConditions.push(eq(schema.salesOrders.customerId, customerId));
+      }
     } else if (customerId) {
       filterConditions.push(eq(schema.salesOrders.customerId, customerId));
     }
-  } else if (customerId) {
-    filterConditions.push(eq(schema.salesOrders.customerId, customerId));
-  }
 
-  if (filterConditions.length > 0) {
-    q = q.where(and(...filterConditions)) as any;
-  }
+    if (filterConditions.length > 0) {
+      q = q.where(and(...filterConditions)) as any;
+    }
 
-  const res = await q;
-  return res.map(d => ({
-    id: d.id,
-    orderId: d.orderId,
-    dispatchNumber: d.dispatchNumber,
-    courier: d.courier,
-    trackingNumber: d.trackingNumber,
-    dispatchDate: d.dispatchDate.toISOString(),
-    remarks: d.remarks || undefined,
-    createdBy: d.createdBy,
-    createdAt: d.createdAt.toISOString(),
-    orderNumber: d.orderNumber
-  }));
+    const res = await q;
+    return res.map(d => ({
+      id: d.id,
+      orderId: d.orderId,
+      dispatchNumber: d.dispatchNumber,
+      courier: d.courier,
+      trackingNumber: d.trackingNumber,
+      dispatchDate: d.dispatchDate ? d.dispatchDate.toISOString() : new Date().toISOString(),
+      remarks: d.remarks || undefined,
+      createdBy: d.createdBy,
+      createdAt: d.createdAt ? d.createdAt.toISOString() : new Date().toISOString(),
+      orderNumber: d.orderNumber
+    }));
+  } catch (err) {
+    console.error('Failed to query dispatches:', err);
+    return [];
+  }
 }
 
 async function db_createDispatch(
@@ -1074,61 +1164,66 @@ async function db_createDispatch(
 // INVOICES & LEDGER MANAGEMENT (ACCOUNTS / ADMIN)
 // =============================================================================
 async function db_getInvoices(customerId?: string): Promise<Invoice[]> {
-  const { getSession } = await import('./session');
-  const session = await getSession();
+  try {
+    const { getSession } = await import('./session');
+    const session = await getSession();
 
-  let q = db.select({
-    id: schema.invoices.id,
-    orderId: schema.invoices.orderId,
-    invoiceNumber: schema.invoices.invoiceNumber,
-    invoiceDate: schema.invoices.invoiceDate,
-    amount: schema.invoices.amount,
-    dueDate: schema.invoices.dueDate,
-    status: schema.invoices.status,
-    invoicePdfUrl: schema.invoices.invoicePdfUrl,
-    createdBy: schema.invoices.createdBy,
-    createdAt: schema.invoices.createdAt,
-    orderNumber: schema.salesOrders.orderNumber,
-    companyName: schema.customers.companyName
-  })
-  .from(schema.invoices)
-  .innerJoin(schema.salesOrders, eq(schema.invoices.orderId, schema.salesOrders.id))
-  .innerJoin(schema.customers, eq(schema.salesOrders.customerId, schema.customers.id))
-  .orderBy(desc(schema.invoices.createdAt));
+    let q = db.select({
+      id: schema.invoices.id,
+      orderId: schema.invoices.orderId,
+      invoiceNumber: schema.invoices.invoiceNumber,
+      invoiceDate: schema.invoices.invoiceDate,
+      amount: schema.invoices.amount,
+      dueDate: schema.invoices.dueDate,
+      status: schema.invoices.status,
+      invoicePdfUrl: schema.invoices.invoicePdfUrl,
+      createdBy: schema.invoices.createdBy,
+      createdAt: schema.invoices.createdAt,
+      orderNumber: schema.salesOrders.orderNumber,
+      companyName: schema.customers.companyName
+    })
+    .from(schema.invoices)
+    .innerJoin(schema.salesOrders, eq(schema.invoices.orderId, schema.salesOrders.id))
+    .innerJoin(schema.customers, eq(schema.salesOrders.customerId, schema.customers.id))
+    .orderBy(desc(schema.invoices.createdAt));
 
-  let filterConditions = [];
-  if (session) {
-    if (session.role === 'CLIENT_BRANCH_USER') {
-      filterConditions.push(eq(schema.salesOrders.customerId, session.customerId || ''));
-      filterConditions.push(eq(schema.salesOrders.branchId, session.branchId || ''));
-    } else if (session.role === 'CLIENT_ADMIN') {
-      filterConditions.push(eq(schema.salesOrders.customerId, session.customerId || ''));
+    let filterConditions = [];
+    if (session) {
+      if (session.role === 'CLIENT_BRANCH_USER') {
+        filterConditions.push(eq(schema.salesOrders.customerId, session.customerId || ''));
+        filterConditions.push(eq(schema.salesOrders.branchId, session.branchId || ''));
+      } else if (session.role === 'CLIENT_ADMIN') {
+        filterConditions.push(eq(schema.salesOrders.customerId, session.customerId || ''));
+      } else if (customerId) {
+        filterConditions.push(eq(schema.salesOrders.customerId, customerId));
+      }
     } else if (customerId) {
       filterConditions.push(eq(schema.salesOrders.customerId, customerId));
     }
-  } else if (customerId) {
-    filterConditions.push(eq(schema.salesOrders.customerId, customerId));
-  }
 
-  if (filterConditions.length > 0) {
-    q = q.where(and(...filterConditions)) as any;
-  }
+    if (filterConditions.length > 0) {
+      q = q.where(and(...filterConditions)) as any;
+    }
 
-  const res = await q;
-  return res.map(inv => ({
-    id: inv.id,
-    orderId: inv.orderId,
-    invoiceNumber: inv.invoiceNumber,
-    invoiceDate: inv.invoiceDate.toISOString(),
-    amount: Number(inv.amount),
-    dueDate: inv.dueDate.toISOString(),
-    status: inv.status as any,
-    invoicePdfUrl: inv.invoicePdfUrl || undefined,
-    createdBy: inv.createdBy,
-    createdAt: inv.createdAt.toISOString(),
-    orderNumber: inv.orderNumber,
-    companyName: inv.companyName
-  }));
+    const res = await q;
+    return res.map(inv => ({
+      id: inv.id,
+      orderId: inv.orderId,
+      invoiceNumber: inv.invoiceNumber,
+      invoiceDate: inv.invoiceDate ? inv.invoiceDate.toISOString() : new Date().toISOString(),
+      amount: Number(inv.amount),
+      dueDate: inv.dueDate ? inv.dueDate.toISOString() : new Date().toISOString(),
+      status: inv.status as any,
+      invoicePdfUrl: inv.invoicePdfUrl || undefined,
+      createdBy: inv.createdBy,
+      createdAt: inv.createdAt ? inv.createdAt.toISOString() : new Date().toISOString(),
+      orderNumber: inv.orderNumber,
+      companyName: inv.companyName
+    }));
+  } catch (err) {
+    console.error('Failed to query invoices:', err);
+    return [];
+  }
 }
 
 async function db_createInvoice(
@@ -1199,70 +1294,75 @@ async function db_createInvoice(
 // PAYMENT REFERENCE SYSTEM (EXTERNAL UTR VERIFICATION)
 // =============================================================================
 async function db_getPaymentReferences(customerId?: string): Promise<PaymentReference[]> {
-  const { getSession } = await import('./session');
-  const session = await getSession();
+  try {
+    const { getSession } = await import('./session');
+    const session = await getSession();
 
-  let q = db.select({
-    id: schema.paymentReferences.id,
-    customerId: schema.paymentReferences.customerId,
-    invoiceId: schema.paymentReferences.invoiceId,
-    paymentDate: schema.paymentReferences.paymentDate,
-    amount: schema.paymentReferences.amount,
-    paymentMode: schema.paymentReferences.paymentMode,
-    referenceNumber: schema.paymentReferences.referenceNumber,
-    utrNumber: schema.paymentReferences.utrNumber,
-    notes: schema.paymentReferences.notes,
-    attachmentUrl: schema.paymentReferences.attachmentUrl,
-    status: schema.paymentReferences.status,
-    verifiedBy: schema.paymentReferences.verifiedBy,
-    verifiedAt: schema.paymentReferences.verifiedAt,
-    rejectionReason: schema.paymentReferences.rejectionReason,
-    createdAt: schema.paymentReferences.createdAt,
-    companyName: schema.customers.companyName,
-    invoiceNumber: schema.invoices.invoiceNumber
-  })
-  .from(schema.paymentReferences)
-  .innerJoin(schema.customers, eq(schema.paymentReferences.customerId, schema.customers.id))
-  .leftJoin(schema.invoices, eq(schema.paymentReferences.invoiceId, schema.invoices.id))
-  .orderBy(desc(schema.paymentReferences.createdAt));
+    let q = db.select({
+      id: schema.paymentReferences.id,
+      customerId: schema.paymentReferences.customerId,
+      invoiceId: schema.paymentReferences.invoiceId,
+      paymentDate: schema.paymentReferences.paymentDate,
+      amount: schema.paymentReferences.amount,
+      paymentMode: schema.paymentReferences.paymentMode,
+      referenceNumber: schema.paymentReferences.referenceNumber,
+      utrNumber: schema.paymentReferences.utrNumber,
+      notes: schema.paymentReferences.notes,
+      attachmentUrl: schema.paymentReferences.attachmentUrl,
+      status: schema.paymentReferences.status,
+      verifiedBy: schema.paymentReferences.verifiedBy,
+      verifiedAt: schema.paymentReferences.verifiedAt,
+      rejectionReason: schema.paymentReferences.rejectionReason,
+      createdAt: schema.paymentReferences.createdAt,
+      companyName: schema.customers.companyName,
+      invoiceNumber: schema.invoices.invoiceNumber
+    })
+    .from(schema.paymentReferences)
+    .innerJoin(schema.customers, eq(schema.paymentReferences.customerId, schema.customers.id))
+    .leftJoin(schema.invoices, eq(schema.paymentReferences.invoiceId, schema.invoices.id))
+    .orderBy(desc(schema.paymentReferences.createdAt));
 
-  let filterConditions = [];
-  if (session) {
-    if (session.role === 'CLIENT_BRANCH_USER') {
-      filterConditions.push(eq(schema.paymentReferences.customerId, session.customerId || ''));
-    } else if (session.role === 'CLIENT_ADMIN') {
-      filterConditions.push(eq(schema.paymentReferences.customerId, session.customerId || ''));
+    let filterConditions = [];
+    if (session) {
+      if (session.role === 'CLIENT_BRANCH_USER') {
+        filterConditions.push(eq(schema.paymentReferences.customerId, session.customerId || ''));
+      } else if (session.role === 'CLIENT_ADMIN') {
+        filterConditions.push(eq(schema.paymentReferences.customerId, session.customerId || ''));
+      } else if (customerId) {
+        filterConditions.push(eq(schema.paymentReferences.customerId, customerId));
+      }
     } else if (customerId) {
       filterConditions.push(eq(schema.paymentReferences.customerId, customerId));
     }
-  } else if (customerId) {
-    filterConditions.push(eq(schema.paymentReferences.customerId, customerId));
-  }
 
-  if (filterConditions.length > 0) {
-    q = q.where(and(...filterConditions)) as any;
-  }
+    if (filterConditions.length > 0) {
+      q = q.where(and(...filterConditions)) as any;
+    }
 
-  const res = await q;
-  return res.map(p => ({
-    id: p.id,
-    customerId: p.customerId,
-    invoiceId: p.invoiceId || undefined,
-    paymentDate: p.paymentDate.toISOString(),
-    amount: Number(p.amount),
-    paymentMode: p.paymentMode as any,
-    referenceNumber: p.referenceNumber || undefined,
-    utrNumber: p.utrNumber,
-    notes: p.notes || undefined,
-    attachmentUrl: p.attachmentUrl || undefined,
-    status: p.status as any,
-    verifiedBy: p.verifiedBy || undefined,
-    verifiedAt: p.verifiedAt?.toISOString() || undefined,
-    rejectionReason: p.rejectionReason || undefined,
-    createdAt: p.createdAt.toISOString(),
-    companyName: p.companyName,
-    invoiceNumber: p.invoiceNumber || undefined
-  }));
+    const res = await q;
+    return res.map(p => ({
+      id: p.id,
+      customerId: p.customerId,
+      invoiceId: p.invoiceId || undefined,
+      paymentDate: p.paymentDate ? p.paymentDate.toISOString() : new Date().toISOString(),
+      amount: Number(p.amount),
+      paymentMode: p.paymentMode as any,
+      referenceNumber: p.referenceNumber || undefined,
+      utrNumber: p.utrNumber,
+      notes: p.notes || undefined,
+      attachmentUrl: p.attachmentUrl || undefined,
+      status: p.status as any,
+      verifiedBy: p.verifiedBy || undefined,
+      verifiedAt: p.verifiedAt?.toISOString() || undefined,
+      rejectionReason: p.rejectionReason || undefined,
+      createdAt: p.createdAt ? p.createdAt.toISOString() : new Date().toISOString(),
+      companyName: p.companyName,
+      invoiceNumber: p.invoiceNumber || undefined
+    }));
+  } catch (err) {
+    console.error('Failed to query payment references:', err);
+    return [];
+  }
 }
 
 async function db_submitPaymentReference(
@@ -1446,108 +1546,118 @@ async function db_getCustomerLedger(customerId: string): Promise<CustomerLedgerE
 // ADMIN B2B DASHBOARD KPI STATS & GRAPHS
 // =============================================================================
 async function db_getB2BAdminStats() {
-  const customersList = await db.select().from(schema.customers);
-  const totalCustomers = customersList.length;
+  try {
+    const customersList = await db.select().from(schema.customers).catch(() => []);
+    const totalCustomers = customersList.length;
 
-  const orders = await db.select().from(schema.salesOrders);
-  const totalOrders = orders.length;
+    const orders = await db.select().from(schema.salesOrders).catch(() => []);
+    const totalOrders = orders.length;
 
-  const pendingApprovals = orders.filter(o => o.status === 'PENDING_APPROVAL').length;
+    const pendingApprovals = orders.filter(o => o.status === 'PENDING_APPROVAL').length;
 
-  // Outstanding Receivables = sum of running balances of active ledgers
-  // To do this accurately, fetch the latest ledger entry for each customer
-  let outstandingReceivables = 0;
-  for (const c of customersList) {
-    const lastLedger = await db.select()
-      .from(schema.customerLedger)
-      .where(eq(schema.customerLedger.customerId, c.id))
-      .orderBy(desc(schema.customerLedger.createdAt))
-      .limit(1);
-    if (lastLedger.length > 0) {
-      outstandingReceivables += Number(lastLedger[0].runningBalance);
-    }
-  }
-
-  // Top Customers (by order total value)
-  const customerTotals: Record<string, number> = {};
-  for (const o of orders) {
-    if (o.status !== 'CANCELLED') {
-      customerTotals[o.customerId] = (customerTotals[o.customerId] || 0) + Number(o.totalAmount);
-    }
-  }
-
-  const topCustomers = Object.entries(customerTotals)
-    .map(([id, amt]) => {
-      const custObj = customersList.find(c => c.id === id);
-      return {
-        companyName: custObj ? custObj.companyName : 'Unknown',
-        amount: amt
-      };
-    })
-    .sort((a, b) => b.amount - a.amount)
-    .slice(0, 5);
-
-  // Top Products (by approved order items quantity)
-  const productQuantities: Record<string, number> = {};
-  const approvedItems = await db.select({
-    variantId: schema.salesOrderItems.variantId,
-    qty: schema.salesOrderItems.approvedQuantity
-  })
-  .from(schema.salesOrderItems)
-  .innerJoin(schema.salesOrders, eq(schema.salesOrderItems.orderId, schema.salesOrders.id))
-  .where(eq(schema.salesOrders.status, 'APPROVED'));
-
-  const variantsList = await db.select().from(schema.productVariants);
-  const productsList = await db.select().from(schema.products);
-
-  for (const item of approvedItems) {
-    const variant = variantsList.find(v => v.id === item.variantId);
-    if (variant) {
-      const prod = productsList.find(p => p.id === variant.productId);
-      if (prod) {
-        productQuantities[prod.productName] = (productQuantities[prod.productName] || 0) + item.qty;
+    let outstandingReceivables = 0;
+    for (const c of customersList) {
+      const lastLedger = await db.select()
+        .from(schema.customerLedger)
+        .where(eq(schema.customerLedger.customerId, c.id))
+        .orderBy(desc(schema.customerLedger.createdAt))
+        .limit(1)
+        .catch(() => []);
+      if (lastLedger.length > 0) {
+        outstandingReceivables += Number(lastLedger[0].runningBalance);
       }
     }
+
+    const customerTotals: Record<string, number> = {};
+    for (const o of orders) {
+      if (o.status !== 'CANCELLED') {
+        customerTotals[o.customerId] = (customerTotals[o.customerId] || 0) + Number(o.totalAmount);
+      }
+    }
+
+    const topCustomers = Object.entries(customerTotals)
+      .map(([id, amt]) => {
+        const custObj = customersList.find(c => c.id === id);
+        return {
+          companyName: custObj ? custObj.companyName : 'Unknown',
+          amount: amt
+        };
+      })
+      .sort((a, b) => b.amount - a.amount)
+      .slice(0, 5);
+
+    const productQuantities: Record<string, number> = {};
+    const approvedItems = await db.select({
+      variantId: schema.salesOrderItems.variantId,
+      qty: schema.salesOrderItems.approvedQuantity
+    })
+    .from(schema.salesOrderItems)
+    .innerJoin(schema.salesOrders, eq(schema.salesOrderItems.orderId, schema.salesOrders.id))
+    .where(eq(schema.salesOrders.status, 'APPROVED'))
+    .catch(() => []);
+
+    const variantsList = await db.select().from(schema.productVariants).catch(() => []);
+    const productsList = await db.select().from(schema.products).catch(() => []);
+
+    for (const item of approvedItems) {
+      const variant = variantsList.find(v => v.id === item.variantId);
+      if (variant) {
+        const prod = productsList.find(p => p.id === variant.productId);
+        if (prod) {
+          productQuantities[prod.productName] = (productQuantities[prod.productName] || 0) + item.qty;
+        }
+      }
+    }
+
+    const topProducts = Object.entries(productQuantities)
+      .map(([name, qty]) => ({ name, quantity: qty }))
+      .sort((a, b) => b.quantity - a.quantity)
+      .slice(0, 5);
+
+    const recentOrders = await getSalesOrders().catch(() => []);
+    const recentPayments = await getPaymentReferences().catch(() => []);
+
+    return {
+      totalCustomers,
+      totalOrders,
+      pendingApprovals,
+      outstandingReceivables,
+      topCustomers,
+      topProducts,
+      recentOrders: recentOrders.slice(0, 5),
+      recentPayments: recentPayments.slice(0, 5)
+    };
+  } catch (err) {
+    console.error('Error in db_getB2BAdminStats:', err);
+    return {
+      totalCustomers: 0,
+      totalOrders: 0,
+      pendingApprovals: 0,
+      outstandingReceivables: 0,
+      topCustomers: [],
+      topProducts: [],
+      recentOrders: [],
+      recentPayments: []
+    };
   }
-
-  const topProducts = Object.entries(productQuantities)
-    .map(([name, qty]) => ({ name, quantity: qty }))
-    .sort((a, b) => b.quantity - a.quantity)
-    .slice(0, 5);
-
-  // Recent Orders
-  const recentOrders = await getSalesOrders();
-
-  // Recent Payments
-  const recentPayments = await getPaymentReferences();
-
-  return {
-    totalCustomers,
-    totalOrders,
-    pendingApprovals,
-    outstandingReceivables,
-    topCustomers,
-    topProducts,
-    recentOrders: recentOrders.slice(0, 5),
-    recentPayments: recentPayments.slice(0, 5)
-  };
 }
 
 async function db_getSuperAdminAnalytics() {
-  const state = {
-    customers: await db.select().from(schema.customers),
-    salesOrders: await db.select().from(schema.salesOrders),
-    salesOrderItems: await db.select().from(schema.salesOrderItems),
-    productVariants: await db.select().from(schema.productVariants),
-    products: await db.select().from(schema.products),
-    customerLedger: await db.select().from(schema.customerLedger),
-    returnRequests: await db.select().from(schema.returnRequests),
-    returnRequestItems: await db.select().from(schema.returnRequestItems),
-    customerBranches: await db.select().from(schema.customerBranches),
-    dispatches: await db.select().from(schema.dispatches),
-    auditLogs: await db.select().from(schema.auditLogs),
-    stockTransactions: await db.select().from(schema.stockTransactions)
-  };
+  try {
+    const state = {
+      customers: await db.select().from(schema.customers).catch(() => []),
+      salesOrders: await db.select().from(schema.salesOrders).catch(() => []),
+      salesOrderItems: await db.select().from(schema.salesOrderItems).catch(() => []),
+      productVariants: await db.select().from(schema.productVariants).catch(() => []),
+      products: await db.select().from(schema.products).catch(() => []),
+      customerLedger: await db.select().from(schema.customerLedger).catch(() => []),
+      returnRequests: await db.select().from(schema.returnRequests).catch(() => []),
+      returnRequestItems: await db.select().from(schema.returnRequestItems).catch(() => []),
+      customerBranches: await db.select().from(schema.customerBranches).catch(() => []),
+      dispatches: await db.select().from(schema.dispatches).catch(() => []),
+      auditLogs: await db.select().from(schema.auditLogs).catch(() => []),
+      stockTransactions: await db.select().from(schema.stockTransactions).catch(() => [])
+    };
 
   return {
     customers: state.customers.map(c => ({
@@ -1603,31 +1713,66 @@ async function db_getSuperAdminAnalytics() {
       createdAt: t.createdAt.toISOString()
     }))
   };
+  } catch (err) {
+    console.error('Error in db_getSuperAdminAnalytics:', err);
+    return null;
+  }
 }
 
 // =============================================================================
 // CUSTOMER BRANCH MANAGEMENT (SUPERADMIN/ADMIN/B2B CUSTOMER)
 // =============================================================================
-async function db_getCustomerBranches(customerId?: string): Promise<CustomerBranch[]> {
-  let q = db.select().from(schema.customerBranches);
-  if (customerId) {
-    q = db.select().from(schema.customerBranches).where(eq(schema.customerBranches.customerId, customerId)) as any;
+async function db_getCustomerBranches(customerId?: string, filterByUserId?: string): Promise<CustomerBranch[]> {
+  try {
+    let res: any[] = [];
+    if (filterByUserId) {
+      // Fetch only branches explicitly assigned to this user in the junction table
+      res = await db.select({
+        id: schema.customerBranches.id,
+        customerId: schema.customerBranches.customerId,
+        branchName: schema.customerBranches.branchName,
+        branchCode: schema.customerBranches.branchCode,
+        contactPerson: schema.customerBranches.contactPerson,
+        phone: schema.customerBranches.phone,
+        email: schema.customerBranches.email,
+        gst: schema.customerBranches.gst,
+        billingAddress: schema.customerBranches.billingAddress,
+        shippingAddress: schema.customerBranches.shippingAddress,
+        status: schema.customerBranches.status,
+        createdAt: schema.customerBranches.createdAt
+      })
+      .from(schema.customerUserBranches)
+      .innerJoin(schema.customerBranches, eq(schema.customerUserBranches.branchId, schema.customerBranches.id))
+      .where(eq(schema.customerUserBranches.userId, filterByUserId));
+
+      // Fallback: If no junction entries exist for this user (e.g. CLIENT_ADMIN or legacy user), return all active branches for the company
+      if (res.length === 0 && customerId) {
+        res = await db.select().from(schema.customerBranches).where(eq(schema.customerBranches.customerId, customerId));
+      }
+    } else if (customerId) {
+      res = await db.select().from(schema.customerBranches).where(eq(schema.customerBranches.customerId, customerId));
+    } else {
+      res = await db.select().from(schema.customerBranches);
+    }
+    
+    return res.map(b => ({
+      id: b.id,
+      customerId: b.customerId,
+      branchName: b.branchName,
+      branchCode: b.branchCode,
+      contactPerson: b.contactPerson || undefined,
+      phone: b.phone || undefined,
+      email: b.email || undefined,
+      gst: b.gst || undefined,
+      billingAddress: b.billingAddress || undefined,
+      shippingAddress: b.shippingAddress || undefined,
+      status: b.status,
+      createdAt: b.createdAt ? b.createdAt.toISOString() : new Date().toISOString()
+    }));
+  } catch (err) {
+    console.error('Failed to query customer branches:', err);
+    return [];
   }
-  const res = await q;
-  return res.map(b => ({
-    id: b.id,
-    customerId: b.customerId,
-    branchName: b.branchName,
-    branchCode: b.branchCode,
-    contactPerson: b.contactPerson || undefined,
-    phone: b.phone || undefined,
-    email: b.email || undefined,
-    gst: b.gst || undefined,
-    billingAddress: b.billingAddress || undefined,
-    shippingAddress: b.shippingAddress || undefined,
-    status: b.status,
-    createdAt: b.createdAt.toISOString()
-  }));
 }
 
 async function db_createCustomerBranch(customerId: string, branchData: any): Promise<CustomerBranch> {
@@ -2310,15 +2455,30 @@ async function db_getB2BBranchReporting(): Promise<any> {
 }
 
 async function db_getRoles() {
-  return db.select().from(schema.roles);
+  try {
+    return await db.select().from(schema.roles);
+  } catch (err) {
+    console.error('Failed to query roles:', err);
+    return [];
+  }
 }
 
 async function db_getPermissions() {
-  return db.select().from(schema.permissions);
+  try {
+    return await db.select().from(schema.permissions);
+  } catch (err) {
+    console.error('Failed to query permissions:', err);
+    return [];
+  }
 }
 
 async function db_getRolePermissions() {
-  return db.select().from(schema.rolePermissions);
+  try {
+    return await db.select().from(schema.rolePermissions);
+  } catch (err) {
+    console.error('Failed to query role permissions:', err);
+    return [];
+  }
 }
 
 // =============================================================================
@@ -2334,15 +2494,20 @@ const getPaymentReferences = db_getPaymentReferences;
 const getB2BCatalog = db_getB2BCatalog;
 
 export async function getAllPricingOverrides() {
-  const { customerPricing } = await import('@/db/schema');
-  const res = await db.select().from(customerPricing);
-  return res.map(p => ({
-    id: p.id,
-    customerId: p.customerId,
-    variantId: p.variantId,
-    customPrice: Number(p.customPrice),
-    createdAt: p.createdAt.toISOString()
-  }));
+  try {
+    const { customerPricing } = await import('@/db/schema');
+    const res = await db.select().from(customerPricing).catch(() => []);
+    return res.map(p => ({
+      id: p.id,
+      customerId: p.customerId,
+      variantId: p.variantId,
+      customPrice: Number(p.customPrice),
+      createdAt: p.createdAt ? p.createdAt.toISOString() : new Date().toISOString()
+    }));
+  } catch (err) {
+    console.error('Failed to query pricing overrides:', err);
+    return [];
+  }
 }
 
 export {

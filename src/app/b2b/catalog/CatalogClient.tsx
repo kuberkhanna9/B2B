@@ -451,53 +451,97 @@ export default function CatalogClient({ catalog, categories, colors, sizes, bran
               </div>
 
               {/* Cart Footer */}
-              {cart.length > 0 && (
-                <div className="border-t border-slate-200 p-6 bg-slate-50 space-y-4">
-                  {/* Branch Selection */}
-                  <div className="space-y-1">
-                    <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider">Select Shipping Branch *</label>
-                    <select
-                      value={selectedBranchId}
-                      onChange={e => setSelectedBranchId(e.target.value)}
-                      required
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-[11px] text-slate-705 focus:outline-none focus:border-slate-800 transition-all font-semibold"
+              {cart.length > 0 && (() => {
+                const branchCount = branches ? branches.length : 0;
+                
+                // Auto-selection logic inside component render cycle or via local state initialization
+                let displayBranchSelector = false;
+                let displayReadOnlyBranch = false;
+                let displayNoBranchWarning = false;
+                let activeBranchName = "";
+
+                if (branchCount === 1) {
+                  displayReadOnlyBranch = true;
+                  activeBranchName = `${branches[0].branchName} (${branches[0].branchCode})`;
+                  if (selectedBranchId !== branches[0].id) {
+                    // Set timeout to avoid setting state during render phase
+                    setTimeout(() => setSelectedBranchId(branches[0].id), 0);
+                  }
+                } else if (branchCount > 1) {
+                  displayBranchSelector = true;
+                } else {
+                  displayNoBranchWarning = true;
+                }
+
+                return (
+                  <div className="border-t border-slate-200 p-6 bg-slate-50 space-y-4">
+                    {/* CASE 1: Single assigned branch (Read-only) */}
+                    {displayReadOnlyBranch && (
+                      <div className="space-y-1">
+                        <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider">Shipping Branch</label>
+                        <div className="w-full bg-slate-100 border border-slate-200 rounded-xl px-3 py-2.5 text-[11px] text-slate-700 font-extrabold shadow-inner select-none">
+                          {activeBranchName}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* CASE 2: Multiple assigned branches (Select dropdown) */}
+                    {displayBranchSelector && (
+                      <div className="space-y-1">
+                        <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider">Select Shipping Branch *</label>
+                        <select
+                          value={selectedBranchId}
+                          onChange={e => setSelectedBranchId(e.target.value)}
+                          required
+                          className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-[11px] text-slate-700 focus:outline-none focus:border-slate-800 transition-all font-semibold"
+                        >
+                          <option value="">-- Choose Branch --</option>
+                          {branches.map((b: any) => (
+                            <option key={b.id} value={b.id}>
+                              {b.branchName} ({b.branchCode})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    {/* CASE 3: Zero assigned branches (Informative Warning) */}
+                    {displayNoBranchWarning && (
+                      <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl text-[10px] text-rose-700 font-bold flex gap-2 items-start leading-relaxed">
+                        <AlertCircle size={14} className="shrink-0 mt-0.5" />
+                        <span>No shipping branch has been assigned to your account. Please contact your administrator.</span>
+                      </div>
+                    )}
+
+                    {/* Order Remarks */}
+                    <div className="space-y-1">
+                      <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider">Order Remarks / Dispatch Notes</label>
+                      <textarea
+                        placeholder="Add any specific shipping, tagging, or booking requests..."
+                        rows={2}
+                        value={remarks}
+                        disabled={displayNoBranchWarning}
+                        onChange={e => setRemarks(e.target.value)}
+                        className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-[11px] text-slate-700 focus:outline-none focus:border-slate-800 transition-all font-semibold disabled:opacity-50"
+                      />
+                    </div>
+
+                    {/* Summary math */}
+                    <div className="flex justify-between items-center py-2 border-t border-b border-slate-200">
+                      <span className="font-bold text-slate-500">Order Subtotal:</span>
+                      <span className="text-base font-black text-slate-900">{formatCurrency(getCartTotal())}</span>
+                    </div>
+
+                    <button
+                      onClick={handleSubmitOrder}
+                      disabled={isPending || displayNoBranchWarning || (displayBranchSelector && !selectedBranchId)}
+                      className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3.5 rounded-xl cursor-pointer shadow-sm text-xs disabled:opacity-30 transition-all flex items-center justify-center gap-1.5"
                     >
-                      <option value="">-- Choose Branch --</option>
-                      {branches && branches.map((b: any) => (
-                        <option key={b.id} value={b.id}>
-                          {b.branchName} ({b.branchCode})
-                        </option>
-                      ))}
-                    </select>
+                      {isPending ? 'Submitting Order...' : 'Submit Order for Approval'}
+                    </button>
                   </div>
-
-                  {/* Order Remarks */}
-                  <div className="space-y-1">
-                    <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider">Order Remarks / Dispatch Notes</label>
-                    <textarea
-                      placeholder="Add any specific shipping, tagging, or booking requests..."
-                      rows={2}
-                      value={remarks}
-                      onChange={e => setRemarks(e.target.value)}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-[11px] text-slate-700 focus:outline-none focus:border-slate-800 transition-all font-semibold"
-                    />
-                  </div>
-
-                  {/* Summary math */}
-                  <div className="flex justify-between items-center py-2 border-t border-b border-slate-200">
-                    <span className="font-bold text-slate-500">Order Subtotal:</span>
-                    <span className="text-base font-black text-slate-900">{formatCurrency(getCartTotal())}</span>
-                  </div>
-
-                  <button
-                    onClick={handleSubmitOrder}
-                    disabled={isPending}
-                    className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3.5 rounded-xl cursor-pointer shadow-sm text-xs disabled:opacity-50 transition-all flex items-center justify-center gap-1.5"
-                  >
-                    {isPending ? 'Submitting Order...' : 'Submit Order for Approval'}
-                  </button>
-                </div>
-              )}
+                );
+              })()}
             </div>
           </div>
         </div>

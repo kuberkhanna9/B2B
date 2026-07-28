@@ -315,131 +315,139 @@ export default function OrdersAdminClient({ orders, variants }: OrdersAdminClien
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-150">
-                            {items.map(item => {
-                              const replacementId = replacedVariantIds[item.id];
-                              const replacementVar = replacementId ? variants.find(v => v.variantId === replacementId) : null;
-                              
-                              const approvedQty = qtyAdjustments[item.id] !== undefined ? qtyAdjustments[item.id] : item.orderedQuantity;
-                              const availStock = replacementVar ? replacementVar.availableStock : (item.availableStock ?? 0);
-                              const hasStockError = approvedQty > availStock && selectedOrder.status === 'PENDING_APPROVAL';
-                              const isRejected = rejectedItemIds[item.id] || approvedQty === 0;
+                            {items.length === 0 ? (
+                              <tr>
+                                <td colSpan={6} className="px-4 py-6 text-center text-slate-400 font-semibold italic">
+                                  No standard catalogue SKUs in this order. See Custom Design Orders Matrix below.
+                                </td>
+                              </tr>
+                            ) : (
+                              items.map(item => {
+                                const replacementId = replacedVariantIds[item.id];
+                                const replacementVar = replacementId ? variants.find(v => v.variantId === replacementId) : null;
+                                
+                                const approvedQty = qtyAdjustments[item.id] !== undefined ? qtyAdjustments[item.id] : item.orderedQuantity;
+                                const availStock = replacementVar ? replacementVar.availableStock : (item.availableStock ?? 0);
+                                const hasStockError = approvedQty > availStock && selectedOrder.status === 'PENDING_APPROVAL';
+                                const isRejected = rejectedItemIds[item.id] || approvedQty === 0;
 
-                              return (
-                                <tr key={item.id} className={`hover:bg-slate-100/20 transition-colors ${isRejected ? 'opacity-40 bg-red-50/10' : ''}`}>
-                                  {/* Details */}
-                                  <td className="px-4 py-3 font-bold text-slate-800">
-                                    <span className="block text-xs font-black text-slate-905">{item.productName}</span>
-                                    <span className="text-[8px] text-slate-400 font-bold block mt-0.5">{item.sku} | {item.colorName} / {item.sizeName}</span>
-                                    
-                                    {selectedOrder.status === 'PENDING_APPROVAL' && (
-                                      <div className="mt-2 space-y-1">
-                                        <label className="block text-[8px] font-bold text-slate-400 uppercase tracking-wider">Replace SKU</label>
-                                        <select
-                                          value={replacementId || ""}
-                                          onChange={e => {
-                                            const val = e.target.value;
-                                            setReplacedVariantIds(prev => ({ ...prev, [item.id]: val }));
-                                            if (val) {
-                                              const newVar = variants.find(v => v.variantId === val);
-                                              const limit = newVar ? newVar.availableStock : 0;
-                                              setQtyAdjustments(prev => ({ ...prev, [item.id]: Math.min(item.orderedQuantity, limit) }));
-                                            } else {
-                                              setQtyAdjustments(prev => ({ ...prev, [item.id]: item.orderedQuantity }));
-                                            }
-                                          }}
-                                          className="bg-white border border-slate-200 rounded-lg p-1 text-[9px] w-full font-bold focus:outline-none focus:border-slate-800"
-                                        >
-                                          <option value="">-- No Replacement --</option>
-                                          {variants.map(v => (
-                                            <option key={v.variantId} value={v.variantId}>
-                                              {v.productName} ({v.sku}) - {v.colorName} / {v.sizeName} (Stock: {v.availableStock})
-                                            </option>
-                                          ))}
-                                        </select>
-                                      </div>
-                                    )}
-
-                                    {replacementVar && (
-                                      <span className="block text-[8px] text-blue-600 font-black mt-1 uppercase">Replaced with: {replacementVar.sku}</span>
-                                    )}
-                                  </td>
-                                  
-                                  {/* Available */}
-                                  <td className="px-4 py-3 text-right font-bold">
-                                    <span className={availStock <= 0 ? 'text-red-500 font-extrabold' : (availStock <= 5 ? 'text-amber-500' : 'text-slate-600') }>
-                                      {availStock}
-                                    </span>
-                                  </td>
-
-                                  {/* Ordered */}
-                                  <td className="px-4 py-3 text-right font-bold text-slate-500">{item.orderedQuantity}</td>
-                                  
-                                  {/* Approve Qty input */}
-                                  <td className="px-4 py-3 text-center bg-slate-50/50">
-                                    {selectedOrder.status === 'PENDING_APPROVAL' ? (
-                                      <div className="space-y-1.5">
-                                        <input
-                                          type="number"
-                                          min={0}
-                                          max={item.orderedQuantity}
-                                          value={isRejected ? 0 : approvedQty}
-                                          onChange={e => {
-                                            const val = Number(e.target.value);
-                                            handleQtyChange(item.id, val, item.orderedQuantity);
-                                            if (val > 0) {
-                                              setRejectedItemIds(prev => ({ ...prev, [item.id]: false }));
-                                            }
-                                          }}
-                                          disabled={isRejected}
-                                          className={`w-16 border rounded-lg px-2 py-1 text-center font-black focus:outline-none ${
-                                            hasStockError 
-                                              ? 'border-red-305 bg-red-50 text-red-750' 
-                                              : 'border-slate-205 bg-white text-slate-900 focus:border-slate-900'
-                                          }`}
-                                        />
-                                        <div className="flex justify-center gap-1">
-                                          <button
-                                            type="button"
-                                            onClick={() => {
-                                              setQtyAdjustments(prev => ({ ...prev, [item.id]: item.orderedQuantity }));
-                                              setRejectedItemIds(prev => ({ ...prev, [item.id]: false }));
+                                return (
+                                  <tr key={item.id} className={`hover:bg-slate-100/20 transition-colors ${isRejected ? 'opacity-40 bg-red-50/10' : ''}`}>
+                                    {/* Details */}
+                                    <td className="px-4 py-3 font-bold text-slate-800">
+                                      <span className="block text-xs font-black text-slate-905">{item.productName}</span>
+                                      <span className="text-[8px] text-slate-400 font-bold block mt-0.5">{item.sku} | {item.colorName} / {item.sizeName}</span>
+                                      
+                                      {selectedOrder.status === 'PENDING_APPROVAL' && (
+                                        <div className="mt-2 space-y-1">
+                                          <label className="block text-[8px] font-bold text-slate-400 uppercase tracking-wider">Replace SKU</label>
+                                          <select
+                                            value={replacementId || ""}
+                                            onChange={e => {
+                                              const val = e.target.value;
+                                              setReplacedVariantIds(prev => ({ ...prev, [item.id]: val }));
+                                              if (val) {
+                                                const newVar = variants.find(v => v.variantId === val);
+                                                const limit = newVar ? newVar.availableStock : 0;
+                                                setQtyAdjustments(prev => ({ ...prev, [item.id]: Math.min(item.orderedQuantity, limit) }));
+                                              } else {
+                                                setQtyAdjustments(prev => ({ ...prev, [item.id]: item.orderedQuantity }));
+                                              }
                                             }}
-                                            className="text-[8px] font-black uppercase text-emerald-650 hover:underline cursor-pointer"
+                                            className="bg-white border border-slate-200 rounded-lg p-1 text-[9px] w-full font-bold focus:outline-none focus:border-slate-800"
                                           >
-                                            Full
-                                          </button>
-                                          <button
-                                            type="button"
-                                            onClick={() => {
-                                              setQtyAdjustments(prev => ({ ...prev, [item.id]: 0 }));
-                                              setRejectedItemIds(prev => ({ ...prev, [item.id]: true }));
-                                            }}
-                                            className="text-[8px] font-black uppercase text-red-650 hover:underline cursor-pointer"
-                                          >
-                                            Reject
-                                          </button>
+                                            <option value="">-- No Replacement --</option>
+                                            {variants.map(v => (
+                                              <option key={v.variantId} value={v.variantId}>
+                                                {v.productName} ({v.sku}) - {v.colorName} / {v.sizeName} (Stock: {v.availableStock})
+                                              </option>
+                                            ))}
+                                          </select>
                                         </div>
-                                      </div>
-                                    ) : (
-                                      <span className="font-black text-slate-905">
-                                        {item.approvedQuantity === 0 ? 'REJECTED' : item.approvedQuantity}
-                                      </span>
-                                    )}
-                                    {hasStockError && !isRejected && (
-                                      <span className="text-[7px] text-red-500 font-black uppercase mt-0.5 block animate-bounce">Deficit!</span>
-                                    )}
-                                  </td>
+                                      )}
 
-                                  {/* Price */}
-                                  <td className="px-4 py-3 text-right font-bold text-slate-700">{formatCurrency(item.pricePerUnit)}</td>
-                                  
-                                  {/* Total */}
-                                  <td className="px-4 py-3 text-right font-black text-slate-905">
-                                    {formatCurrency((isRejected ? 0 : approvedQty) * item.pricePerUnit)}
-                                  </td>
-                                </tr>
-                              );
-                            })}
+                                      {replacementVar && (
+                                        <span className="block text-[8px] text-blue-600 font-black mt-1 uppercase">Replaced with: {replacementVar.sku}</span>
+                                      )}
+                                    </td>
+                                    
+                                    {/* Available */}
+                                    <td className="px-4 py-3 text-right font-bold">
+                                      <span className={availStock <= 0 ? 'text-red-500 font-extrabold' : (availStock <= 5 ? 'text-amber-500' : 'text-slate-600') }>
+                                        {availStock}
+                                      </span>
+                                    </td>
+
+                                    {/* Ordered */}
+                                    <td className="px-4 py-3 text-right font-bold text-slate-500">{item.orderedQuantity}</td>
+                                    
+                                    {/* Approve Qty input */}
+                                    <td className="px-4 py-3 text-center bg-slate-50/50">
+                                      {selectedOrder.status === 'PENDING_APPROVAL' ? (
+                                        <div className="space-y-1.5">
+                                          <input
+                                            type="number"
+                                            min={0}
+                                            max={item.orderedQuantity}
+                                            value={isRejected ? 0 : approvedQty}
+                                            onChange={e => {
+                                              const val = Number(e.target.value);
+                                              handleQtyChange(item.id, val, item.orderedQuantity);
+                                              if (val > 0) {
+                                                setRejectedItemIds(prev => ({ ...prev, [item.id]: false }));
+                                              }
+                                            }}
+                                            disabled={isRejected}
+                                            className={`w-16 border rounded-lg px-2 py-1 text-center font-black focus:outline-none ${
+                                              hasStockError 
+                                                ? 'border-red-305 bg-red-50 text-red-750' 
+                                                : 'border-slate-205 bg-white text-slate-900 focus:border-slate-900'
+                                            }`}
+                                          />
+                                          <div className="flex justify-center gap-1">
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                setQtyAdjustments(prev => ({ ...prev, [item.id]: item.orderedQuantity }));
+                                                setRejectedItemIds(prev => ({ ...prev, [item.id]: false }));
+                                              }}
+                                              className="text-[8px] font-black uppercase text-emerald-650 hover:underline cursor-pointer"
+                                            >
+                                              Full
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                setQtyAdjustments(prev => ({ ...prev, [item.id]: 0 }));
+                                                setRejectedItemIds(prev => ({ ...prev, [item.id]: true }));
+                                              }}
+                                              className="text-[8px] font-black uppercase text-red-650 hover:underline cursor-pointer"
+                                            >
+                                              Reject
+                                            </button>
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        <span className="font-black text-slate-905">
+                                          {item.approvedQuantity === 0 ? 'REJECTED' : item.approvedQuantity}
+                                        </span>
+                                      )}
+                                      {hasStockError && !isRejected && (
+                                        <span className="text-[7px] text-red-500 font-black uppercase mt-0.5 block animate-bounce">Deficit!</span>
+                                      )}
+                                    </td>
+
+                                    {/* Price */}
+                                    <td className="px-4 py-3 text-right font-bold text-slate-700">{formatCurrency(item.pricePerUnit)}</td>
+                                    
+                                    {/* Total */}
+                                    <td className="px-4 py-3 text-right font-black text-slate-905">
+                                      {formatCurrency((isRejected ? 0 : approvedQty) * item.pricePerUnit)}
+                                    </td>
+                                  </tr>
+                                );
+                              })
+                            )}
                           </tbody>
                         </table>
                       </div>

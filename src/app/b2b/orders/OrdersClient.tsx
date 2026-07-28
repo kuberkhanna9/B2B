@@ -24,19 +24,22 @@ interface OrdersClientProps {
 export default function OrdersClient({ orders }: OrdersClientProps) {
   const [selectedOrder, setSelectedOrder] = useState<SalesOrder | null>(null);
   const [selectedOrderItems, setSelectedOrderItems] = useState<SalesOrderItem[]>([]);
+  const [selectedCustomItems, setSelectedCustomItems] = useState<any[]>([]);
   const [isLoadingDetails, setIsLoadingDetails] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
   const fetchOrderDetails = async (order: SalesOrder) => {
     setSelectedOrder(order);
     setSelectedOrderItems([]);
+    setSelectedCustomItems([]);
     setIsLoadingDetails(true);
     setErrorMsg('');
 
     try {
       const response = await getOrderDetailsAction(order.id);
       if (response.success && response.data) {
-        setSelectedOrderItems(response.data.items);
+        setSelectedOrderItems(response.data.items || []);
+        setSelectedCustomItems(response.data.customItems || []);
       } else {
         setErrorMsg(response.error || 'Failed to fetch items.');
       }
@@ -239,41 +242,89 @@ export default function OrdersClient({ orders }: OrdersClientProps) {
                   ) : errorMsg ? (
                     <div className="py-4 text-center text-red-650 bg-red-50 rounded-xl border border-red-200 font-semibold">{errorMsg}</div>
                   ) : (
-                    <div className="border border-slate-200 rounded-2xl overflow-hidden bg-slate-50/30">
-                      <table className="w-full text-left text-[10px] border-collapse">
-                        <thead>
-                          <tr className="bg-slate-100 border-b border-slate-200 text-[8px] font-black uppercase text-slate-450 tracking-wider">
-                            <th className="px-4 py-2.5">Garment Details</th>
-                            <th className="px-4 py-2.5 text-right">Ordered</th>
-                            <th className="px-4 py-2.5 text-right">Approved</th>
-                            <th className="px-4 py-2.5 text-right">Shipped</th>
-                            <th className="px-4 py-2.5 text-right">Remaining</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-150">
-                          {selectedOrderItems.map(item => {
-                            const remaining = Math.max(0, item.approvedQuantity - item.dispatchedQuantity);
-                            return (
-                              <tr key={item.id} className="hover:bg-slate-100/20 transition-colors">
-                                <td className="px-4 py-3 font-bold text-slate-800">
-                                  <span className="block text-xs font-black text-slate-900">{item.productName}</span>
-                                  <span className="text-[8px] text-slate-400 font-bold block mt-0.5">{item.sku} | Color: {item.colorName} | Size: {item.sizeName}</span>
-                                </td>
-                                <td className="px-4 py-3 text-right font-bold text-slate-500">{item.orderedQuantity}</td>
-                                <td className="px-4 py-3 text-right font-black text-slate-900">
-                                  {selectedOrder.status === 'PENDING_APPROVAL' ? '—' : item.approvedQuantity}
-                                </td>
-                                <td className="px-4 py-3 text-right font-bold text-emerald-600">
-                                  {selectedOrder.status === 'PENDING_APPROVAL' ? '—' : item.dispatchedQuantity}
-                                </td>
-                                <td className="px-4 py-3 text-right font-black text-slate-900">
-                                  {selectedOrder.status === 'PENDING_APPROVAL' ? '—' : remaining}
+                    <div className="space-y-4">
+                      <div className="border border-slate-200 rounded-2xl overflow-hidden bg-slate-50/30">
+                        <table className="w-full text-left text-[10px] border-collapse">
+                          <thead>
+                            <tr className="bg-slate-100 border-b border-slate-200 text-[8px] font-black uppercase text-slate-450 tracking-wider">
+                              <th className="px-4 py-2.5">Garment Details</th>
+                              <th className="px-4 py-2.5 text-right">Ordered</th>
+                              <th className="px-4 py-2.5 text-right">Approved</th>
+                              <th className="px-4 py-2.5 text-right">Shipped</th>
+                              <th className="px-4 py-2.5 text-right">Remaining</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-150">
+                            {selectedOrderItems.length === 0 ? (
+                              <tr>
+                                <td colSpan={5} className="px-4 py-6 text-center text-slate-400 font-semibold italic">
+                                  No standard catalogue SKUs in this order. See Custom Design Orders Matrix below.
                                 </td>
                               </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
+                            ) : (
+                              selectedOrderItems.map(item => {
+                                const remaining = Math.max(0, item.approvedQuantity - item.dispatchedQuantity);
+                                return (
+                                  <tr key={item.id} className="hover:bg-slate-100/20 transition-colors">
+                                    <td className="px-4 py-3 font-bold text-slate-800">
+                                      <span className="block text-xs font-black text-slate-900">{item.productName}</span>
+                                      <span className="text-[8px] text-slate-400 font-bold block mt-0.5">{item.sku} | Color: {item.colorName} | Size: {item.sizeName}</span>
+                                    </td>
+                                    <td className="px-4 py-3 text-right font-bold text-slate-500">{item.orderedQuantity}</td>
+                                    <td className="px-4 py-3 text-right font-black text-slate-900">
+                                      {selectedOrder.status === 'PENDING_APPROVAL' ? '—' : item.approvedQuantity}
+                                    </td>
+                                    <td className="px-4 py-3 text-right font-bold text-emerald-600">
+                                      {selectedOrder.status === 'PENDING_APPROVAL' ? '—' : item.dispatchedQuantity}
+                                    </td>
+                                    <td className="px-4 py-3 text-right font-black text-slate-900">
+                                      {selectedOrder.status === 'PENDING_APPROVAL' ? '—' : remaining}
+                                    </td>
+                                  </tr>
+                                );
+                              })
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* Custom Design Items Table */}
+                      {selectedCustomItems.length > 0 && (
+                        <div className="space-y-2 pt-4 border-t border-slate-100">
+                          <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">Custom Design Items</span>
+                          <div className="border border-slate-200 rounded-2xl overflow-hidden bg-white">
+                            <table className="w-full text-left text-[10px] border-collapse">
+                              <thead>
+                                <tr className="bg-slate-100 border-b border-slate-200 text-[8px] font-black uppercase text-slate-450 tracking-wider">
+                                  <th className="px-4 py-2.5">Item Name & Details</th>
+                                  <th className="px-4 py-2.5 text-right">Qty</th>
+                                  <th className="px-4 py-2.5 text-right">Price per pc</th>
+                                  <th className="px-4 py-2.5 text-right">Total Amount</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-150">
+                                {selectedCustomItems.map(cItem => (
+                                  <tr key={cItem.id} className="hover:bg-slate-50/50">
+                                    <td className="px-4 py-3">
+                                      <span className="block font-black text-slate-900">{cItem.itemName}</span>
+                                      {cItem.description && <span className="block text-[9px] text-slate-500 font-semibold">{cItem.description}</span>}
+                                      {cItem.remarks && <span className="block text-[8px] text-slate-400 mt-0.5">Note: {cItem.remarks}</span>}
+                                      {cItem.imageUrl && (
+                                        <a href={cItem.imageUrl} target="_blank" rel="noopener noreferrer" className="inline-block text-[8px] text-blue-600 underline font-black uppercase mt-1">
+                                          View Design Reference
+                                        </a>
+                                      )}
+                                    </td>
+                                    <td className="px-4 py-3 text-right font-black text-slate-900">{cItem.quantity}</td>
+                                    <td className="px-4 py-3 text-right font-bold text-slate-700">{formatCurrency(cItem.wsp)}</td>
+                                    <td className="px-4 py-3 text-right font-black text-slate-900">{formatCurrency(cItem.quantity * cItem.wsp)}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

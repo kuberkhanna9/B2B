@@ -805,6 +805,24 @@ export const branchUsersRelations = relations(branchUsers, ({ one }) => ({
   }),
 }));
 
+export const customerUserBranches = pgTable('customer_user_branches', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: uuid('user_id').references(() => customerUsers.id, { onDelete: 'cascade' }).notNull(),
+  branchId: uuid('branch_id').references(() => customerBranches.id, { onDelete: 'cascade' }).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+export const customerUserBranchesRelations = relations(customerUserBranches, ({ one }) => ({
+  user: one(customerUsers, {
+    fields: [customerUserBranches.userId],
+    references: [customerUsers.id],
+  }),
+  branch: one(customerBranches, {
+    fields: [customerUserBranches.branchId],
+    references: [customerBranches.id],
+  }),
+}));
+
 export const inventoryAvailability = pgTable('inventory_availability', {
   variantId: uuid('variant_id').primaryKey(),
   sku: varchar('sku', { length: 100 }).notNull(),

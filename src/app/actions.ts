@@ -125,7 +125,9 @@ export async function createCustomerAction(prevState: any, formData: FormData): 
     revalidatePath('/admin/b2b/customers');
     return { success: true, message: `Customer "${parsed.data.companyName}" successfully registered!` };
   } catch (err: any) {
-    return { success: false, error: err.message || 'Customer registration failed.' };
+    console.error('Customer registration error in action:', err);
+    const detailMsg = err?.detail ? ` (${err.detail})` : (err?.cause?.message ? ` (${err.cause.message})` : '');
+    return { success: false, error: `${err.message || 'Customer registration failed.'}${detailMsg}` };
   }
 }
 

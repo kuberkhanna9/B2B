@@ -59,7 +59,7 @@ export default function Navigation({ user }: NavigationProps) {
     { name: 'Admin Dashboard', href: '/', icon: LayoutDashboard },
   ];
 
-  if (user.role === 'SUPERADMIN') {
+  if (user.role === 'SUPERADMIN' || user.role === 'INVENTORY_DEPARTMENT' || user.role === 'INVENTORY' || user.role === 'ACCOUNTS_DEPARTMENT' || user.role === 'ACCOUNTS') {
     adminLinks.push({ name: 'Customer Accounts', href: '/admin/b2b/customers', icon: Users });
     adminLinks.push({ name: 'Order Approvals', href: '/admin/b2b/orders', icon: ShoppingCart });
   }

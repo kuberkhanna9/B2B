@@ -33,7 +33,8 @@ export default async function AdminDashboardPage() {
 
   const stats = await getB2BAdminStats();
   const isSuperAdmin = user.role === 'SUPERADMIN';
-  const analyticsData = isSuperAdmin ? await getSuperAdminAnalytics() : null;
+  const canViewAnalytics = isSuperAdmin || user.role === 'INVENTORY_DEPARTMENT' || user.role === 'INVENTORY' || user.role === 'ACCOUNTS_DEPARTMENT' || user.role === 'ACCOUNTS';
+  const analyticsData = canViewAnalytics ? await getSuperAdminAnalytics() : null;
 
   const formatCurrency = (val: number) => {
     return new Intl.NumberFormat('en-IN', {
@@ -107,8 +108,8 @@ export default async function AdminDashboardPage() {
           </div>
         </section>
 
-        {/* SuperAdmin Analytics Dashboard */}
-        {isSuperAdmin && analyticsData && (
+        {/* Analytics & Metrics Dashboard */}
+        {analyticsData && (
           <AnalyticsDashboard data={analyticsData} />
         )}
 

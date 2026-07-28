@@ -14,7 +14,7 @@ export default async function CatalogPage() {
 
   // Fetch catalog data specifically mapped with pricing overrides and live stock calculations for this customer
   const catalog = await getB2BCatalog(user.customerId);
-  const branches = await getCustomerBranches(user.customerId);
+  const branches = await getCustomerBranches(user.customerId, user.id);
 
   // Extract filter parameters (categories, colors, sizes) to build search filters
   const categoriesSet = new Set<string>();
