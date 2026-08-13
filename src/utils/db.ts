@@ -215,12 +215,32 @@ async function db_createCustomerUser(
   fullName: string, 
   email: string
 ): Promise<CustomerUser> {
+  const cleanUsername = username.trim();
+  const cleanEmail = email.trim().toLowerCase();
+
+  // 1. Check reserved system usernames
+  const reservedUsernames = ['khanna', 'accounts', 'inventory', 'retail', 'admin', 'superadmin'];
+  if (reservedUsernames.includes(cleanUsername.toLowerCase())) {
+    throw new Error(`Username "${cleanUsername}" is reserved for system administration. Please choose a different Login ID.`);
+  }
+
+  // 2. Check if username is already registered in customer_users
+  const existingUser = await db
+    .select({ id: schema.customerUsers.id })
+    .from(schema.customerUsers)
+    .where(eq(sql`LOWER(${schema.customerUsers.username})`, cleanUsername.toLowerCase()))
+    .limit(1);
+
+  if (existingUser.length > 0) {
+    throw new Error(`Username "${cleanUsername}" is already registered. Please choose a unique Login ID.`);
+  }
+
   const res = await db.insert(schema.customerUsers).values({
     customerId,
-    username,
+    username: cleanUsername,
     passwordHash,
     fullName,
-    email: email.toLowerCase()
+    email: cleanEmail
   }).returning();
 
   const u = res[0];
@@ -261,13 +281,33 @@ async function db_createBranchUser(
   fullName: string,
   email: string
 ) {
+  const cleanUsername = username.trim();
+  const cleanEmail = email.trim().toLowerCase();
+
+  // 1. Check reserved system usernames
+  const reservedUsernames = ['khanna', 'accounts', 'inventory', 'retail', 'admin', 'superadmin'];
+  if (reservedUsernames.includes(cleanUsername.toLowerCase())) {
+    throw new Error(`Username "${cleanUsername}" is reserved for system administration. Please choose a different Login ID.`);
+  }
+
+  // 2. Check if username is already registered in customer_users
+  const existingUser = await db
+    .select({ id: schema.customerUsers.id })
+    .from(schema.customerUsers)
+    .where(eq(sql`LOWER(${schema.customerUsers.username})`, cleanUsername.toLowerCase()))
+    .limit(1);
+
+  if (existingUser.length > 0) {
+    throw new Error(`Username "${cleanUsername}" is already registered. Please choose a unique Login ID.`);
+  }
+
   const res = await db.insert(schema.branchUsers).values({
     customerId,
     branchId,
-    username,
+    username: cleanUsername,
     passwordHash,
     fullName,
-    email: email.toLowerCase()
+    email: cleanEmail
   }).returning();
 
   const u = res[0];

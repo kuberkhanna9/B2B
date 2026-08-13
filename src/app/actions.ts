@@ -146,6 +146,41 @@ export async function updateCustomerStatusAction(customerId: string, active: boo
   }
 }
 
+export async function getCleanErrorMessage(err: any, fallbackMessage: string = 'An error occurred during operation.'): Promise<string> {
+  if (!err) return fallbackMessage;
+
+  const cause = err.cause || err;
+  const code = cause?.code || err?.code;
+  const detail = cause?.detail || err?.detail;
+  const constraint = cause?.constraint_name || cause?.constraint;
+
+  if (code === '23505') {
+    if (constraint?.includes('username') || detail?.includes('username')) {
+      return 'Login ID (username) is already registered. Please enter a different Login ID.';
+    }
+    if (constraint?.includes('email') || detail?.includes('email')) {
+      return 'An account with that email address is already registered.';
+    }
+    if (detail) return `Duplicate entry: ${detail}`;
+    return 'A record with this information already exists in the system.';
+  }
+
+  if (code === '23503') {
+    return 'The selected customer or branch reference does not exist.';
+  }
+
+  const rawMessage = err.message || cause?.message || '';
+  if (rawMessage.startsWith('Failed query:')) {
+    if (detail) return detail;
+    if (cause?.message && !cause.message.startsWith('Failed query:')) {
+      return cause.message;
+    }
+    return fallbackMessage;
+  }
+
+  return rawMessage || fallbackMessage;
+}
+
 export async function createCustomerUserAction(prevState: any, formData: FormData): Promise<{ success: boolean; error?: string; message?: string }> {
   const user = await getSession();
   if (!user || !checkPermission(user, 'MANAGE_CUSTOMER_LOGIN')) {
@@ -171,7 +206,8 @@ export async function createCustomerUserAction(prevState: any, formData: FormDat
     revalidatePath('/admin/b2b/customers');
     return { success: true, message: 'Portal login user successfully registered!' };
   } catch (err: any) {
-    return { success: false, error: err.message || 'Failed to create user.' };
+    const errorMsg = await getCleanErrorMessage(err, 'Failed to create user.');
+    return { success: false, error: errorMsg };
   }
 }
 
@@ -684,7 +720,8 @@ export async function createBranchUserAction(
     revalidatePath('/b2b/settings/users');
     return { success: true, message: 'Branch login user successfully registered!' };
   } catch (err: any) {
-    return { success: false, error: err.message || 'Failed to create branch user.' };
+    const errorMsg = await getCleanErrorMessage(err, 'Failed to create branch user.');
+    return { success: false, error: errorMsg };
   }
 }
 

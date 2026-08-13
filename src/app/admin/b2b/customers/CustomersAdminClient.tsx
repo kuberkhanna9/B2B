@@ -775,7 +775,7 @@ export default function CustomersAdminClient({ customers, customerUsers, variant
               </div>
 
               {userFormState.error && (
-                <p className="text-[10px] text-red-655 bg-red-50 border border-red-200 p-2.5 rounded-xl font-bold">{userFormState.error}</p>
+                <p className="text-[10px] text-red-700 bg-red-50 border border-red-200 p-2.5 rounded-xl font-bold">{userFormState.error}</p>
               )}
 
               {userFormState.success && (
