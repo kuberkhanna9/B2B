@@ -3,12 +3,13 @@ import { getCustomers, getCustomerBranches, getB2BCatalog } from '@/utils/db';
 import Navigation from '@/components/Navigation';
 import CreateOrderOnBehalfClient from './CreateOrderAdminClient';
 import { redirect } from 'next/navigation';
+import { checkPermission } from '@/utils/rbac';
 
 export const revalidate = 0;
 
 export default async function CreateOrderOnBehalfPage() {
   const user = await getSession();
-  if (!user || user.role !== 'SUPERADMIN') {
+  if (!user || !checkPermission(user, 'CREATE_ORDER_BEHALF')) {
     redirect('/login');
   }
 
